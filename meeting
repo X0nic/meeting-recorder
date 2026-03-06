@@ -147,7 +147,6 @@ OSA
   echo "$result" | sed -n '/\[debug\]/p' >&2
   echo "$result" | sed -n '/---OUTPUT---/,$ p' | tail -n +2
 }
-}
 
 detect_meeting_apps() {
   local screen_bounds
