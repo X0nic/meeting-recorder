@@ -3,6 +3,7 @@ set -euo pipefail
 
 MEETINGS_DIR="${MEETINGS_DIR:-$HOME/Documents/meetings}"
 STATE_DIR="${STATE_DIR:-$HOME/.meeting-recorder}"
+DEBUG="${MEETING_DEBUG:-0}"
 STATE_FILE="$STATE_DIR/current"
 CONFIG_FILE="$STATE_DIR/config"
 SILENCE_THRESHOLD_DB="${SILENCE_THRESHOLD_DB:--50}"
@@ -1160,6 +1161,20 @@ EOF
   duration=$((end - start))
   echo "duration=$duration" > "$dir/meeting.meta"
 
+  if [[ "$DEBUG" == "1" && -f "$transcript" && -s "$transcript" ]]; then
+    echo "" >&2
+    echo "━━━ TRANSCRIPT ━━━" >&2
+    cat "$transcript" >&2
+    echo "━━━ END TRANSCRIPT ━━━" >&2
+    echo "" >&2
+  fi
+  if [[ "$DEBUG" == "1" && -f "$notes" && -s "$notes" ]]; then
+    echo "" >&2
+    echo "━━━ NOTES ━━━" >&2
+    cat "$notes" >&2
+    echo "━━━ END NOTES ━━━" >&2
+    echo "" >&2
+  fi
   echo "Recording stopped. Files saved to $dir" >&2
 }
 
@@ -1250,6 +1265,13 @@ process_recording_file() {
             local line_count
             line_count=$(wc -l < "$dir/transcript.txt" | tr -d ' ')
             echo "  ✅ Transcript: $word_count words, $line_count segments" >&2
+            if [[ "$DEBUG" == "1" ]]; then
+              echo "" >&2
+              echo "━━━ TRANSCRIPT ━━━" >&2
+              cat "$dir/transcript.txt" >&2
+              echo "━━━ END TRANSCRIPT ━━━" >&2
+              echo "" >&2
+            fi
           else
             echo "  ❌ Transcript empty — recording may have no audio" >&2
           fi
@@ -1313,6 +1335,13 @@ EOF
         if [[ -s "$notes" ]]; then
           notes_generated="yes"
           echo "  ✅ Notes generated" >&2
+          if [[ "$DEBUG" == "1" ]]; then
+            echo "" >&2
+            echo "━━━ NOTES ━━━" >&2
+            cat "$notes" >&2
+            echo "━━━ END NOTES ━━━" >&2
+            echo "" >&2
+          fi
         else
           echo "  ❌ Claude returned empty response" >&2
         fi
@@ -1482,6 +1511,11 @@ EOF
 }
 
 main() {
+  # Parse --debug flag
+  while [[ "${1:-}" == "--debug" || "${1:-}" == "-d" ]]; do
+    DEBUG=1
+    shift
+  done
   local cmd="${1:-}"
   case "$cmd" in
     start)
@@ -1490,6 +1524,11 @@ main() {
       ;;
     process)
       shift
+      # Also check for --debug after subcommand
+      while [[ "${1:-}" == "--debug" || "${1:-}" == "-d" ]]; do
+        DEBUG=1
+        shift
+      done
       process_recording_file "${1:-}"
       ;;
     test)
