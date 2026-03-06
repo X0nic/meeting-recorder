@@ -128,13 +128,13 @@ OSA
 
 detect_meeting_apps() {
   local screen_bounds
-  screen_bounds=$(get_screen_bounds 2>/dev/null || true)
+  screen_bounds=$(get_screen_bounds || true)
   if [[ -z "$screen_bounds" ]]; then
     return 0
   fi
 
   local window_data
-  window_data=$(get_meeting_app_windows 2>/dev/null || true)
+  window_data=$(get_meeting_app_windows || true)
   if [[ -z "$window_data" ]]; then
     echo "No meeting apps detected" >&2
     return 0
