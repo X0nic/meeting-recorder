@@ -613,7 +613,11 @@ start_recording() {
   echo "Starting recording. macOS may prompt for Screen Recording permission." >&2
 
   local all_indices video_indices
-  mapfile -t all_indices < <(get_video_indices)
+  local _line
+  all_indices=()
+  while IFS= read -r _line; do
+    [[ -n "$_line" ]] && all_indices+=("$_line")
+  done < <(get_video_indices)
   if [[ "$screen_sel" == "all" ]]; then
     video_indices=("${all_indices[@]}")
   else
@@ -714,26 +718,29 @@ test_setup() {
     exit 1
   fi
 
-  declare -A signal_map
-  declare -A class_map
-  declare -A name_map
+  # Parallel arrays (bash 3.x compat — no associative arrays)
   local audio_indices=()
+  local audio_names=()
+  local audio_signals=()
+  local audio_classes=()
 
   echo "Audio device signal check (3s each):" >&2
+  local i=0
   while IFS=$'\t' read -r idx name; do
     if [[ -z "$idx" || -z "$name" ]]; then
       continue
     fi
     audio_indices+=("$idx")
-    name_map["$idx"]="$name"
-    class_map["$idx"]="$(classify_audio_device "$name")"
+    audio_names+=("$name")
+    audio_classes+=("$(classify_audio_device "$name")")
     if audio_signal_detected "$idx"; then
-      signal_map["$idx"]="ok"
-      echo "  [$idx] $name — ✅ (${class_map[$idx]})" >&2
+      audio_signals+=("ok")
+      echo "  [$idx] $name — ✅ (${audio_classes[$i]})" >&2
     else
-      signal_map["$idx"]="no"
-      echo "  [$idx] $name — ❌ (${class_map[$idx]})" >&2
+      audio_signals+=("no")
+      echo "  [$idx] $name — ❌ (${audio_classes[$i]})" >&2
     fi
+    i=$((i + 1))
   done <<< "$audio"
 
   if [[ "${#audio_indices[@]}" -eq 0 ]]; then
@@ -748,62 +755,53 @@ test_setup() {
   local first_signal=""
   local first_any="${audio_indices[0]}"
 
-  local idx
-  for idx in "${audio_indices[@]}"; do
-    if [[ "${signal_map[$idx]}" == "ok" && -z "$first_signal" ]]; then
+  for ((i=0; i<${#audio_indices[@]}; i++)); do
+    local idx="${audio_indices[$i]}"
+    local sig="${audio_signals[$i]}"
+    local cls="${audio_classes[$i]}"
+    if [[ "$sig" == "ok" && -z "$first_signal" ]]; then
       first_signal="$idx"
     fi
-    if [[ "${class_map[$idx]}" == "system" ]]; then
-      if [[ -z "$first_sys" ]]; then
-        first_sys="$idx"
-      fi
-      if [[ "${signal_map[$idx]}" == "ok" && -z "$first_sys_signal" ]]; then
-        first_sys_signal="$idx"
-      fi
-    elif [[ "${class_map[$idx]}" == "mic" ]]; then
-      if [[ -z "$first_mic" ]]; then
-        first_mic="$idx"
-      fi
-      if [[ "${signal_map[$idx]}" == "ok" && -z "$first_mic_signal" ]]; then
-        first_mic_signal="$idx"
-      fi
+    if [[ "$cls" == "system" ]]; then
+      if [[ -z "$first_sys" ]]; then first_sys="$idx"; fi
+      if [[ "$sig" == "ok" && -z "$first_sys_signal" ]]; then first_sys_signal="$idx"; fi
+    elif [[ "$cls" == "mic" ]]; then
+      if [[ -z "$first_mic" ]]; then first_mic="$idx"; fi
+      if [[ "$sig" == "ok" && -z "$first_mic_signal" ]]; then first_mic_signal="$idx"; fi
     fi
   done
 
-  if [[ -n "$first_mic" && "${signal_map[$first_mic]}" != "ok" ]]; then
-    echo "Say something now..." >&2
-    if audio_signal_detected "$first_mic"; then
-      signal_map["$first_mic"]="ok"
-      first_mic_signal="$first_mic"
-      echo "Microphone signal (retry): ✅" >&2
-    else
-      signal_map["$first_mic"]="no"
-      echo "Microphone signal (retry): ❌" >&2
+  # Retry mic if no signal detected
+  if [[ -n "$first_mic" ]]; then
+    local mic_idx_pos=""
+    for ((i=0; i<${#audio_indices[@]}; i++)); do
+      if [[ "${audio_indices[$i]}" == "$first_mic" ]]; then mic_idx_pos="$i"; break; fi
+    done
+    if [[ -n "$mic_idx_pos" && "${audio_signals[$mic_idx_pos]}" != "ok" ]]; then
+      echo "Say something now..." >&2
+      sleep 1
+      if audio_signal_detected "$first_mic"; then
+        audio_signals[$mic_idx_pos]="ok"
+        first_mic_signal="$first_mic"
+        echo "Microphone signal (retry): ✅" >&2
+      else
+        echo "Microphone signal (retry): ❌" >&2
+      fi
     fi
   fi
 
   local sys_audio=""
   local mic_audio=""
 
-  if [[ -n "$first_sys_signal" ]]; then
-    sys_audio="$first_sys_signal"
-  elif [[ -n "$first_sys" ]]; then
-    sys_audio="$first_sys"
-  elif [[ -n "$first_signal" ]]; then
-    sys_audio="$first_signal"
-  else
-    sys_audio="$first_any"
-  fi
+  if [[ -n "$first_sys_signal" ]]; then sys_audio="$first_sys_signal"
+  elif [[ -n "$first_sys" ]]; then sys_audio="$first_sys"
+  elif [[ -n "$first_signal" ]]; then sys_audio="$first_signal"
+  else sys_audio="$first_any"; fi
 
-  if [[ -n "$first_mic_signal" ]]; then
-    mic_audio="$first_mic_signal"
-  elif [[ -n "$first_mic" ]]; then
-    mic_audio="$first_mic"
-  elif [[ -n "$first_signal" ]]; then
-    mic_audio="$first_signal"
-  else
-    mic_audio="$first_any"
-  fi
+  if [[ -n "$first_mic_signal" ]]; then mic_audio="$first_mic_signal"
+  elif [[ -n "$first_mic" ]]; then mic_audio="$first_mic"
+  elif [[ -n "$first_signal" ]]; then mic_audio="$first_signal"
+  else mic_audio="$first_any"; fi
 
   local screen_names=""
   if [[ "$screen_sel" == "all" ]]; then
@@ -812,16 +810,18 @@ test_setup() {
     screen_names="$(index_to_name video "$screen_sel")"
   fi
 
-  local sys_name="${name_map[$sys_audio]}"
-  local mic_name="${name_map[$mic_audio]}"
-  local sys_mark="❌"
-  local mic_mark="❌"
-  if [[ "${signal_map[$sys_audio]}" == "ok" ]]; then
-    sys_mark="✅"
-  fi
-  if [[ "${signal_map[$mic_audio]}" == "ok" ]]; then
-    mic_mark="✅"
-  fi
+  # Look up names and signals for chosen devices
+  local sys_name="" mic_name="" sys_mark="❌" mic_mark="❌"
+  for ((i=0; i<${#audio_indices[@]}; i++)); do
+    if [[ "${audio_indices[$i]}" == "$sys_audio" ]]; then
+      sys_name="${audio_names[$i]}"
+      if [[ "${audio_signals[$i]}" == "ok" ]]; then sys_mark="✅"; fi
+    fi
+    if [[ "${audio_indices[$i]}" == "$mic_audio" ]]; then
+      mic_name="${audio_names[$i]}"
+      if [[ "${audio_signals[$i]}" == "ok" ]]; then mic_mark="✅"; fi
+    fi
+  done
 
   echo "" >&2
   echo "Summary:" >&2
