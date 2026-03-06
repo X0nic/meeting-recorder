@@ -1,0 +1,533 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MEETINGS_DIR="${MEETINGS_DIR:-$HOME/Documents/meetings}"
+STATE_DIR="${STATE_DIR:-$HOME/.meeting-recorder}"
+STATE_FILE="$STATE_DIR/current"
+
+ensure_dirs() {
+  mkdir -p "$MEETINGS_DIR" "$STATE_DIR"
+}
+
+ffmpeg_list_devices() {
+  ffmpeg -f avfoundation -list_devices true -i "" 2>&1
+}
+
+parse_devices() {
+  local type="$1" # video|audio
+  local section=""
+  ffmpeg_list_devices | awk -v want="$type" '
+    /AVFoundation video devices:/ {section="video"; next}
+    /AVFoundation audio devices:/ {section="audio"; next}
+    section==want && match($0, /\[[0-9]+\] .*/, m) {print substr($0, RSTART, RLENGTH)}
+  '
+}
+
+list_devices_pretty() {
+  local type="$1"
+  parse_devices "$type" | while IFS= read -r line; do
+    local idx name
+    idx="${line%%]*}"
+    idx="${idx#*[}"
+    name="${line#*] }"
+    printf "%s\t%s\n" "$idx" "$name"
+  done
+}
+
+pick_screen() {
+  local arg="${1:-}"
+  local devices
+  devices=$(list_devices_pretty video || true)
+  if [[ -z "$devices" ]]; then
+    echo "No video devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
+    exit 1
+  fi
+
+  echo "Available screens:" >&2
+  echo "$devices" | awk '{printf "  [%s] %s\n", $1, substr($0, index($0,$2))}' >&2
+
+  local count
+  count=$(echo "$devices" | wc -l | tr -d ' ')
+
+  if [[ -n "$arg" ]]; then
+    if [[ "$arg" == "all" ]]; then
+      echo "all"
+      return
+    fi
+    if [[ "$arg" =~ ^[0-9]+$ ]]; then
+      if echo "$devices" | awk '{print $1}' | grep -qx "$arg"; then
+        echo "$arg"
+        return
+      fi
+      if [[ "$arg" -ge 1 && "$arg" -le "$count" ]]; then
+        echo "$devices" | awk -v n="$arg" 'NR==n {print $1}'
+        return
+      fi
+    fi
+    echo "Unknown screen selection: $arg" >&2
+    exit 1
+  fi
+
+  echo "Defaulting to all screens." >&2
+  echo "all"
+}
+
+pick_audio_device() {
+  local label="$1"
+  local env_var="$2"
+  local devices
+  devices=$(list_devices_pretty audio || true)
+  if [[ -z "$devices" ]]; then
+    echo "No audio devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
+    exit 1
+  fi
+
+  local chosen="${!env_var:-}"
+  if [[ -n "$chosen" ]]; then
+    echo "$chosen"
+    return
+  fi
+
+  echo "Available audio devices:" >&2
+  echo "$devices" | awk '{printf "  [%s] %s\n", $1, substr($0, index($0,$2))}' >&2
+  read -r -p "Select $label device index (blank for first): " chosen
+
+  if [[ -z "$chosen" ]]; then
+    echo "$devices" | awk 'NR==1 {print $1}'
+    return
+  fi
+  if echo "$devices" | awk '{print $1}' | grep -qx "$chosen"; then
+    echo "$chosen"
+    return
+  fi
+  echo "Unknown audio selection: $chosen" >&2
+  exit 1
+}
+
+get_video_indices() {
+  parse_devices video | while IFS= read -r line; do
+    local idx
+    idx="${line%%]*}"
+    idx="${idx#*[}"
+    echo "$idx"
+  done
+}
+
+build_video_filter() {
+  local count="$1"
+  if [[ "$count" -le 1 ]]; then
+    echo ""
+    return
+  fi
+
+  local cols rows
+  cols=$(python3 - <<PY
+import math
+c=int($count)
+print(int(math.ceil(math.sqrt(c))))
+PY
+)
+  rows=$(python3 - <<PY
+import math
+c=int($count)
+cols=int($cols)
+print(int(math.ceil(c/cols)))
+PY
+)
+
+  local layout_parts=()
+  local i r c x y
+  for ((i=0;i<count;i++)); do
+    r=$((i / cols))
+    c=$((i % cols))
+    if [[ $c -eq 0 ]]; then
+      x="0"
+    else
+      x="w0*${c}"
+    fi
+    if [[ $r -eq 0 ]]; then
+      y="0"
+    else
+      y="h0*${r}"
+    fi
+    layout_parts+=("${x}_${y}")
+  done
+
+  local layout
+  layout=$(IFS='|'; echo "${layout_parts[*]}")
+  echo "xstack=inputs=${count}:layout=${layout}"
+}
+
+format_duration() {
+  local seconds="$1"
+  if [[ -z "$seconds" ]]; then
+    echo "N/A"
+    return
+  fi
+  python3 - <<PY
+import math
+s=float("$seconds")
+if s < 0:
+  s=0
+h=int(s//3600)
+m=int((s%3600)//60)
+sec=int(s%60)
+print(f"{h:02d}:{m:02d}:{sec:02d}")
+PY
+}
+
+start_recording() {
+  ensure_dirs
+  local screen_arg="${1:-}"
+  local screen_sel
+  screen_sel=$(pick_screen "$screen_arg")
+
+  local sys_audio mic_audio
+  sys_audio=$(pick_audio_device "system audio" MEETING_SYS_AUDIO)
+  mic_audio=$(pick_audio_device "microphone" MEETING_MIC_AUDIO)
+
+  local ts dir
+  ts=$(date "+%Y-%m-%d_%H-%M")
+  dir="$MEETINGS_DIR/$ts"
+  mkdir -p "$dir"
+
+  local recording="$dir/recording.mov"
+  local log="$dir/recording.log"
+
+  echo "Starting recording. macOS may prompt for Screen Recording permission." >&2
+
+  local all_indices video_indices
+  mapfile -t all_indices < <(get_video_indices)
+  if [[ "$screen_sel" == "all" ]]; then
+    video_indices=("${all_indices[@]}")
+  else
+    video_indices=("$screen_sel")
+  fi
+  local video_input_count=${#video_indices[@]}
+
+  local filter
+  filter=$(build_video_filter "$video_input_count")
+
+  local cmd=(ffmpeg -y)
+  for idx in "${video_indices[@]}"; do
+    cmd+=("-f" "avfoundation" "-framerate" "30" "-capture_cursor" "1" "-i" "${idx}:none")
+  done
+  cmd+=( -f avfoundation -i ":${sys_audio}")
+  if [[ "$mic_audio" != "$sys_audio" ]]; then
+    cmd+=( -f avfoundation -i ":${mic_audio}")
+  fi
+
+  local ainputs
+  local vmap="0:v"
+  local amap
+  if [[ -n "$filter" ]]; then
+    vmap="[v]"
+  fi
+
+  if [[ "$mic_audio" != "$sys_audio" ]]; then
+    local sys_audio_index="$video_input_count"
+    local mic_audio_index=$((video_input_count+1))
+    ainputs="[${sys_audio_index}:a][${mic_audio_index}:a]"
+    amap="[a]"
+  else
+    local sys_audio_index="$video_input_count"
+    ainputs="[${sys_audio_index}:a]"
+    amap="[a]"
+  fi
+
+  if [[ -n "$filter" || "$mic_audio" != "$sys_audio" ]]; then
+    local fc=""
+    if [[ -n "$filter" ]]; then
+      fc+="$filter[v]"
+    fi
+    if [[ "$mic_audio" != "$sys_audio" ]]; then
+      if [[ -n "$fc" ]]; then fc+=";"; fi
+      fc+="$ainputs amix=inputs=2:normalize=0[a]"
+    else
+      if [[ -n "$fc" ]]; then fc+=";"; fi
+      fc+="$ainputs anull[a]"
+    fi
+    cmd+=( -filter_complex "$fc" -map "$vmap" -map "$amap" )
+  else
+    cmd+=( -map 0:v -map ${video_input_count}:a )
+  fi
+
+  cmd+=( -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 192k "$recording" )
+
+  "${cmd[@]}" >"$log" 2>&1 &
+  local pid=$!
+
+  echo "pid=$pid" > "$STATE_FILE"
+  echo "dir=$dir" >> "$STATE_FILE"
+  echo "start=$(date +%s)" >> "$STATE_FILE"
+
+  echo "Recording started in $dir" >&2
+  echo "$dir"
+}
+
+stop_recording() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    echo "No active recording found." >&2
+    exit 1
+  fi
+
+  local pid dir start
+  pid=$(awk -F= '/^pid=/ {print $2}' "$STATE_FILE")
+  dir=$(awk -F= '/^dir=/ {print $2}' "$STATE_FILE")
+  start=$(awk -F= '/^start=/ {print $2}' "$STATE_FILE")
+
+  if [[ -z "$pid" || -z "$dir" ]]; then
+    echo "State file corrupted." >&2
+    exit 1
+  fi
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -INT "$pid"
+    wait "$pid" 2>/dev/null || true
+  fi
+
+  rm -f "$STATE_FILE"
+
+  local recording="$dir/recording.mov"
+  local audio="$dir/audio.wav"
+  local transcript="$dir/transcript.txt"
+  local notes="$dir/notes.md"
+
+  if [[ -f "$recording" ]]; then
+    ffmpeg -y -i "$recording" -vn -ac 1 -ar 16000 "$audio" >/dev/null 2>&1 || true
+  fi
+
+  local transcribed=false
+  if command -v whisper >/dev/null 2>&1; then
+    whisper "$audio" --model base --language en --output_format txt --output_dir "$dir" >/dev/null 2>&1 || true
+    if [[ -f "$dir/audio.txt" ]]; then
+      mv "$dir/audio.txt" "$transcript"
+    fi
+    transcribed=true
+  elif command -v whisper-cpp >/dev/null 2>&1; then
+    whisper-cpp -m "${WHISPER_MODEL:-base}" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1 || true
+    if [[ -f "$dir/transcript.txt" ]]; then
+      transcribed=true
+    fi
+  elif command -v whisper-cli >/dev/null 2>&1; then
+    whisper-cli -m "${WHISPER_MODEL:-base}" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1 || true
+    if [[ -f "$dir/transcript.txt" ]]; then
+      transcribed=true
+    fi
+  fi
+
+  if [[ "$transcribed" != true ]]; then
+    echo "Transcription skipped (whisper not found)." >&2
+    : > "$transcript"
+  fi
+
+  local date_label
+  date_label=$(date "+%Y-%m-%d %H:%M")
+
+  local prompt
+  prompt=$(cat <<EOF
+Generate meeting notes in this exact format:
+
+# Meeting Notes — $date_label
+
+## Summary
+Brief 2-3 sentence overview
+
+## Key Discussion Points
+- Point 1
+- Point 2
+
+## Decisions Made
+- Decision 1
+- Decision 2
+
+## Action Items
+- [ ] Action item (@person if mentioned)
+
+## Follow-ups
+- Follow-up item
+
+## Raw Transcript
+[link to transcript.txt]
+
+Use the transcript below. Keep headings and structure exactly the same.
+EOF
+)
+
+  if command -v claude >/dev/null 2>&1; then
+    {
+      echo "$prompt"
+      echo ""
+      echo "Transcript:"
+      cat "$transcript"
+    } | claude > "$notes" 2>/dev/null || true
+  fi
+
+  if [[ ! -s "$notes" ]]; then
+    cat <<EOF > "$notes"
+# Meeting Notes — $date_label
+
+## Summary
+(Claude CLI not available or failed to generate notes.)
+
+## Key Discussion Points
+- 
+
+## Decisions Made
+- 
+
+## Action Items
+- [ ] 
+
+## Follow-ups
+- 
+
+## Raw Transcript
+transcript.txt
+EOF
+  fi
+
+  local end
+  end=$(date +%s)
+  local duration
+  duration=$((end - start))
+  echo "duration=$duration" > "$dir/meeting.meta"
+
+  echo "Recording stopped. Files saved to $dir" >&2
+}
+
+list_meetings() {
+  ensure_dirs
+  local dirs
+  dirs=$(ls -1d "$MEETINGS_DIR"/* 2>/dev/null | sort -r || true)
+  if [[ -z "$dirs" ]]; then
+    echo "No meetings found." >&2
+    return
+  fi
+
+  local idx=1
+  while IFS= read -r dir; do
+    local name
+    name=$(basename "$dir")
+    local duration="N/A"
+    if [[ -f "$dir/meeting.meta" ]]; then
+      duration=$(awk -F= '/^duration=/ {print $2}' "$dir/meeting.meta")
+      duration=$(format_duration "$duration")
+    elif command -v ffprobe >/dev/null 2>&1 && [[ -f "$dir/recording.mov" ]]; then
+      duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$dir/recording.mov" 2>/dev/null || true)
+      duration=$(format_duration "$duration")
+    fi
+
+    local summary=""
+    if [[ -f "$dir/notes.md" ]]; then
+      summary=$(awk '/^## Summary/ {getline; while ($0=="" && getline) {}; print; exit}' "$dir/notes.md")
+    fi
+
+    printf "%2d. %s  (%s)  %s\n" "$idx" "$name" "$duration" "$summary"
+    idx=$((idx+1))
+  done <<< "$dirs"
+}
+
+resolve_meeting_dir() {
+  local id="${1:-}"
+  local dirs
+  dirs=$(ls -1d "$MEETINGS_DIR"/* 2>/dev/null | sort -r || true)
+  if [[ -z "$dirs" ]]; then
+    echo ""; return
+  fi
+
+  if [[ -z "$id" ]]; then
+    echo "$dirs" | head -n1
+    return
+  fi
+
+  if [[ -d "$MEETINGS_DIR/$id" ]]; then
+    echo "$MEETINGS_DIR/$id"
+    return
+  fi
+
+  if [[ "$id" =~ ^[0-9]+$ ]]; then
+    local dir
+    dir=$(echo "$dirs" | awk -v n="$id" 'NR==n {print $0}')
+    if [[ -n "$dir" ]]; then
+      echo "$dir"
+      return
+    fi
+  fi
+
+  echo ""
+}
+
+show_notes() {
+  local id="${1:-}"
+  local dir
+  dir=$(resolve_meeting_dir "$id")
+  if [[ -z "$dir" ]]; then
+    echo "Meeting not found." >&2
+    exit 1
+  fi
+
+  if [[ -f "$dir/notes.md" ]]; then
+    cat "$dir/notes.md"
+  else
+    echo "Notes not found for $dir" >&2
+    exit 1
+  fi
+}
+
+search_meetings() {
+  local query="${1:-}"
+  if [[ -z "$query" ]]; then
+    echo "Usage: meeting search <query>" >&2
+    exit 1
+  fi
+
+  if command -v rg >/dev/null 2>&1; then
+    rg -n --heading "$query" "$MEETINGS_DIR"/ -g 'notes.md' -g 'transcript.txt'
+  else
+    grep -R -n "$query" "$MEETINGS_DIR"/ || true
+  fi
+}
+
+usage() {
+  cat <<EOF
+Usage: meeting <command>
+
+Commands:
+  start [screen]   Start screen recording (default: all screens)
+  stop             Stop recording and generate transcript + notes
+  list             List past meetings
+  notes [id]        Show notes for a meeting (id from list or folder name)
+  search <query>   Search transcripts and notes
+EOF
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    start)
+      shift
+      start_recording "${1:-}"
+      ;;
+    stop)
+      stop_recording
+      ;;
+    list)
+      list_meetings
+      ;;
+    notes)
+      shift
+      show_notes "${1:-}"
+      ;;
+    search)
+      shift
+      search_meetings "${1:-}"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
