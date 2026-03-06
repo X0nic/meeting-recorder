@@ -187,7 +187,13 @@ screen_bounds = parse_lines(os.environ.get("SCREEN_BOUNDS", ""), 5)
 window_data = parse_lines(os.environ.get("WINDOW_DATA", ""), 5)
 screen_devices = parse_lines(os.environ.get("SCREEN_DEVICES", ""), 3)
 
+import sys
+print(f"[debug] Python: screen_bounds={screen_bounds}", file=sys.stderr)
+print(f"[debug] Python: window_data={window_data}", file=sys.stderr)
+print(f"[debug] Python: screen_devices={screen_devices}", file=sys.stderr)
+
 if not screen_bounds or not window_data or not screen_devices:
+    print("[debug] Python: missing data, exiting", file=sys.stderr)
     raise SystemExit(0)
 
 screens = []
