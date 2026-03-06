@@ -6,6 +6,7 @@ STATE_DIR="${STATE_DIR:-$HOME/.meeting-recorder}"
 STATE_FILE="$STATE_DIR/current"
 CONFIG_FILE="$STATE_DIR/config"
 SILENCE_THRESHOLD_DB="${SILENCE_THRESHOLD_DB:--50}"
+MODEL_DIR="$HOME/.local/share/whisper-models"
 
 ensure_dirs() {
   mkdir -p "$MEETINGS_DIR" "$STATE_DIR"
@@ -261,6 +262,7 @@ read_config() {
   CONFIG_SCREEN=""
   CONFIG_SYS_AUDIO=""
   CONFIG_MIC_AUDIO=""
+  CONFIG_WHISPER_MODEL=""
   if [[ ! -f "$CONFIG_FILE" ]]; then
     return
   fi
@@ -269,6 +271,7 @@ read_config() {
       screen) CONFIG_SCREEN="$value" ;;
       system_audio) CONFIG_SYS_AUDIO="$value" ;;
       mic) CONFIG_MIC_AUDIO="$value" ;;
+      whisper_model) CONFIG_WHISPER_MODEL="$value" ;;
       *) ;;
     esac
   done < "$CONFIG_FILE"
@@ -280,6 +283,7 @@ write_config() {
 screen=$CONFIG_SCREEN
 system_audio=$CONFIG_SYS_AUDIO
 mic=$CONFIG_MIC_AUDIO
+whisper_model=$CONFIG_WHISPER_MODEL
 EOF
 }
 
@@ -521,6 +525,177 @@ m=int((s%3600)//60)
 sec=int(s%60)
 print(f"{h:02d}:{m:02d}:{sec:02d}")
 PY
+}
+
+model_filename() {
+  local name="$1"
+  echo "ggml-${name}.bin"
+}
+
+model_path() {
+  local name="$1"
+  echo "$MODEL_DIR/$(model_filename "$name")"
+}
+
+normalize_model_name() {
+  local raw="$1"
+  if [[ -z "$raw" ]]; then
+    echo ""
+    return
+  fi
+  case "$raw" in
+    tiny|base|small|medium|large)
+      echo "$raw"
+      ;;
+    *)
+      local base
+      base=$(basename "$raw")
+      case "$base" in
+        ggml-tiny.bin) echo "tiny" ;;
+        ggml-base.bin) echo "base" ;;
+        ggml-small.bin) echo "small" ;;
+        ggml-medium.bin) echo "medium" ;;
+        ggml-large.bin) echo "large" ;;
+        *) echo "" ;;
+      esac
+      ;;
+  esac
+}
+
+download_model() {
+  local name="$1"
+  local dest
+  dest=$(model_path "$name")
+  mkdir -p "$MODEL_DIR"
+  local url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$(model_filename "$name")"
+  echo "Downloading $(model_filename "$name")..." >&2
+  if curl -L -o "$dest" "$url"; then
+    echo "Model downloaded: $dest" >&2
+    return 0
+  fi
+  echo "Download failed for $url" >&2
+  return 1
+}
+
+resolve_whisper_model_path() {
+  local candidate=""
+  local name=""
+  if [[ -n "${WHISPER_MODEL:-}" ]]; then
+    candidate="$WHISPER_MODEL"
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
+      return
+    fi
+    name=$(normalize_model_name "$candidate")
+    if [[ -n "$name" && -f "$(model_path "$name")" ]]; then
+      echo "$(model_path "$name")"
+      return
+    fi
+  fi
+
+  read_config
+  if [[ -n "$CONFIG_WHISPER_MODEL" ]]; then
+    name=$(normalize_model_name "$CONFIG_WHISPER_MODEL")
+    if [[ -n "$name" && -f "$(model_path "$name")" ]]; then
+      echo "$(model_path "$name")"
+      return
+    fi
+  fi
+
+  local mp
+  for mp in \
+    "$(model_path small)" \
+    "$(model_path base)" \
+    "$(model_path tiny)" \
+    "$(model_path medium)" \
+    "$(model_path large)" \
+    "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
+    "$HOME/.cache/whisper/ggml-base.bin" \
+    "models/ggml-base.bin"; do
+    if [[ -f "$mp" ]]; then
+      echo "$mp"
+      return
+    fi
+  done
+
+  if download_model "small"; then
+    echo "$(model_path small)"
+    return
+  fi
+  echo ""
+}
+
+resolve_whisper_model_name_for_python() {
+  local name=""
+  if [[ -n "${WHISPER_MODEL:-}" ]]; then
+    name=$(normalize_model_name "$WHISPER_MODEL")
+  fi
+  if [[ -z "$name" ]]; then
+    read_config
+    name=$(normalize_model_name "$CONFIG_WHISPER_MODEL")
+  fi
+  if [[ -z "$name" ]]; then
+    name="base"
+  fi
+  echo "$name"
+}
+
+list_models() {
+  local active=""
+  if [[ -n "${WHISPER_MODEL:-}" ]]; then
+    active=$(normalize_model_name "$WHISPER_MODEL")
+  fi
+  if [[ -z "$active" ]]; then
+    read_config
+    active=$(normalize_model_name "$CONFIG_WHISPER_MODEL")
+  fi
+
+  echo "Whisper models (~/.local/share/whisper-models/):"
+  local name size path status line
+  for name in tiny base small medium large; do
+    case "$name" in
+      tiny) size="~75MB" ;;
+      base) size="~142MB" ;;
+      small) size="~466MB" ;;
+      medium) size="~1.5GB" ;;
+      large) size="~2.9GB" ;;
+      *) size="";;
+    esac
+    path=$(model_path "$name")
+    if [[ -f "$path" ]]; then
+      status="downloaded ✅"
+    else
+      status="not downloaded"
+    fi
+    line=$(printf "  %-6s  (%-7s)  — %s" "$name" "$size" "$status")
+    if [[ -n "$active" && "$active" == "$name" ]]; then
+      line="$line (active)"
+    fi
+    echo "$line"
+  done
+}
+
+set_model() {
+  local name="$1"
+  case "$name" in
+    tiny|base|small|medium|large)
+      ;;
+    *)
+      echo "Unknown model: $name" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ ! -f "$(model_path "$name")" ]]; then
+    if ! download_model "$name"; then
+      exit 1
+    fi
+  fi
+
+  read_config
+  CONFIG_WHISPER_MODEL="$name"
+  write_config
+  echo "Active whisper model set to: $name" >&2
 }
 
 start_recording() {
@@ -880,38 +1055,25 @@ stop_recording() {
 
   local transcribed=false
   if command -v whisper >/dev/null 2>&1; then
-    whisper "$audio" --model base --language en --output_format txt --output_dir "$dir" >/dev/null 2>&1 || true
+    local model_name
+    model_name=$(resolve_whisper_model_name_for_python)
+    whisper "$audio" --model "$model_name" --language en --output_format txt --output_dir "$dir" >/dev/null 2>&1 || true
     if [[ -f "$dir/audio.txt" ]]; then
       mv "$dir/audio.txt" "$transcript"
     fi
     transcribed=true
   elif command -v whisper-cpp >/dev/null 2>&1; then
-    whisper-cpp -m "${WHISPER_MODEL:-base}" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1 || true
+    local wmodel
+    wmodel=$(resolve_whisper_model_path)
+    if [[ -n "$wmodel" ]]; then
+      whisper-cpp -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1 || true
+    fi
     if [[ -f "$dir/transcript.txt" ]]; then
       transcribed=true
     fi
   elif command -v whisper-cli >/dev/null 2>&1; then
-    local wmodel="${WHISPER_MODEL:-}"
-    if [[ -z "$wmodel" ]]; then
-      for mp in "$HOME/.local/share/whisper-models/ggml-small.bin" \
-                "$HOME/.local/share/whisper-models/ggml-base.bin" \
-                "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
-                "$HOME/.cache/whisper/ggml-base.bin" \
-                "models/ggml-base.bin"; do
-        if [[ -f "$mp" ]]; then wmodel="$mp"; break; fi
-      done
-    fi
-    if [[ -z "$wmodel" ]]; then
-      echo "No whisper model found. Downloading ggml-small.bin (~466MB)..." >&2
-      mkdir -p "$HOME/.local/share/whisper-models"
-      if curl -L -o "$HOME/.local/share/whisper-models/ggml-small.bin" \
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" 2>/dev/null; then
-        wmodel="$HOME/.local/share/whisper-models/ggml-small.bin"
-        echo "Model downloaded." >&2
-      else
-        echo "Download failed. Set WHISPER_MODEL or manually download a model." >&2
-      fi
-    fi
+    local wmodel
+    wmodel=$(resolve_whisper_model_path)
     if [[ -n "$wmodel" ]]; then
       echo "Transcribing with whisper-cli (model: $(basename "$wmodel"))..." >&2
       whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" 2>&1 || true
@@ -1068,27 +1230,8 @@ process_recording_file() {
   if [[ -f "$audio" ]]; then
     echo "Transcribing..." >&2
     if command -v whisper-cli >/dev/null 2>&1; then
-      local wmodel="${WHISPER_MODEL:-}"
-      if [[ -z "$wmodel" ]]; then
-        for mp in "$HOME/.local/share/whisper-models/ggml-small.bin" \
-                "$HOME/.local/share/whisper-models/ggml-base.bin" \
-                  "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
-                  "$HOME/.cache/whisper/ggml-base.bin" \
-                  "models/ggml-base.bin"; do
-          if [[ -f "$mp" ]]; then wmodel="$mp"; break; fi
-        done
-      fi
-      if [[ -z "$wmodel" ]]; then
-        echo "No whisper model found. Downloading ggml-small.bin (~466MB)..." >&2
-        mkdir -p "$HOME/.local/share/whisper-models"
-        if curl -L -o "$HOME/.local/share/whisper-models/ggml-small.bin" \
-          "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" 2>/dev/null; then
-          wmodel="$HOME/.local/share/whisper-models/ggml-small.bin"
-          echo "Model downloaded." >&2
-        else
-          echo "Download failed. Set WHISPER_MODEL or manually download a model." >&2
-        fi
-      fi
+      local wmodel
+      wmodel=$(resolve_whisper_model_path)
       if [[ -n "$wmodel" ]]; then
         if whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1; then
           if [[ -f "$dir/transcript.txt" ]]; then
@@ -1310,6 +1453,7 @@ Commands:
   list             List past meetings
   notes [id]        Show notes for a meeting (id from list or folder name)
   search <query>   Search transcripts and notes
+  model [name]     Manage whisper models (list or set active)
 EOF
 }
 
@@ -1340,6 +1484,14 @@ main() {
     search)
       shift
       search_meetings "${1:-}"
+      ;;
+    model)
+      shift
+      if [[ -z "${1:-}" || "$1" == "list" ]]; then
+        list_models
+      else
+        set_model "$1"
+      fi
       ;;
     *)
       usage
