@@ -65,15 +65,25 @@ list_audio_devices() {
 }
 
 get_screen_bounds() {
-  python3 <<'PY'
-try:
-    from AppKit import NSScreen
-    for idx, screen in enumerate(NSScreen.screens()):
-        f = screen.frame()
-        print(f"{idx}\t{int(f.origin.x)}\t{int(f.origin.y)}\t{int(f.size.width)}\t{int(f.size.height)}")
-except Exception:
-    pass
-PY
+  osascript <<'OSA'
+use framework "AppKit"
+use scripting additions
+set screens to current application's NSScreen's screens()
+set out to ""
+set idx to 0
+repeat with s in screens
+  set f to s's frame() as list
+  set o to item 1 of f
+  set sz to item 2 of f
+  set x to (item 1 of o) as integer
+  set y to (item 2 of o) as integer
+  set w to (item 1 of sz) as integer
+  set h to (item 2 of sz) as integer
+  set out to out & idx & tab & x & tab & y & tab & w & tab & h & linefeed
+  set idx to idx + 1
+end repeat
+return out
+OSA
 }
 
 get_meeting_app_windows() {
