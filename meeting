@@ -21,7 +21,10 @@ parse_devices() {
   ffmpeg_list_devices | awk -v want="$type" '
     /AVFoundation video devices:/ {section="video"; next}
     /AVFoundation audio devices:/ {section="audio"; next}
-    section==want && match($0, /\[[0-9]+\] .*/, m) {print substr($0, RSTART, RLENGTH)}
+    section==want && /\[[0-9]+\]/ {
+      match($0, /\[[0-9]+\] .*/)
+      print substr($0, RSTART, RLENGTH)
+    }
   '
 }
 
