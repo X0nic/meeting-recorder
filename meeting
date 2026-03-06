@@ -4,6 +4,8 @@ set -euo pipefail
 MEETINGS_DIR="${MEETINGS_DIR:-$HOME/Documents/meetings}"
 STATE_DIR="${STATE_DIR:-$HOME/.meeting-recorder}"
 STATE_FILE="$STATE_DIR/current"
+CONFIG_FILE="$STATE_DIR/config"
+SILENCE_THRESHOLD_DB="${SILENCE_THRESHOLD_DB:--50}"
 
 ensure_dirs() {
   mkdir -p "$MEETINGS_DIR" "$STATE_DIR"
@@ -34,64 +36,143 @@ list_devices_pretty() {
   done
 }
 
-pick_screen() {
-  local arg="${1:-}"
+label_screen() {
+  local name="$1"
+  if [[ "$name" == Capture\ screen* ]]; then
+    echo "screen"
+  else
+    echo "camera"
+  fi
+}
+
+list_screens() {
   local devices
   devices=$(list_devices_pretty video || true)
+  if [[ -z "$devices" ]]; then
+    echo ""
+    return
+  fi
+  echo "$devices" | while IFS=$'\t' read -r idx name; do
+    printf "%s\t%s\t%s\n" "$idx" "$name" "$(label_screen "$name")"
+  done
+}
+
+list_audio_devices() {
+  list_devices_pretty audio || true
+}
+
+read_config() {
+  CONFIG_SCREEN=""
+  CONFIG_SYS_AUDIO=""
+  CONFIG_MIC_AUDIO=""
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    return
+  fi
+  while IFS='=' read -r key value; do
+    case "$key" in
+      screen) CONFIG_SCREEN="$value" ;;
+      system_audio) CONFIG_SYS_AUDIO="$value" ;;
+      mic) CONFIG_MIC_AUDIO="$value" ;;
+      *) ;;
+    esac
+  done < "$CONFIG_FILE"
+}
+
+write_config() {
+  ensure_dirs
+  cat <<EOF > "$CONFIG_FILE"
+screen=$CONFIG_SCREEN
+system_audio=$CONFIG_SYS_AUDIO
+mic=$CONFIG_MIC_AUDIO
+EOF
+}
+
+index_to_name() {
+  local type="$1"
+  local idx="$2"
+  if [[ "$type" == "audio" ]]; then
+    list_audio_devices | awk -v want="$idx" -F'\t' '$1==want {print $2; exit}'
+  else
+    list_screens | awk -v want="$idx" -F'\t' '$1==want {print $2; exit}'
+  fi
+}
+
+name_to_index() {
+  local type="$1"
+  local name="$2"
+  if [[ "$name" =~ ^[0-9]+$ ]]; then
+    if [[ "$type" == "audio" ]]; then
+      if list_audio_devices | awk '{print $1}' | grep -qx "$name"; then
+        echo "$name"
+        return
+      fi
+    else
+      if list_screens | awk '{print $1}' | grep -qx "$name"; then
+        echo "$name"
+        return
+      fi
+    fi
+  fi
+  if [[ "$type" == "audio" ]]; then
+    list_audio_devices | awk -v want="$name" -F'\t' '$2==want {print $1; exit}'
+  else
+    list_screens | awk -v want="$name" -F'\t' '$2==want {print $1; exit}'
+  fi
+}
+
+pick_screen_interactive() {
+  local devices
+  devices=$(list_screens || true)
   if [[ -z "$devices" ]]; then
     echo "No video devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
     exit 1
   fi
 
   echo "Available screens:" >&2
-  echo "$devices" | awk '{printf "  [%s] %s\n", $1, substr($0, index($0,$2))}' >&2
-
-  local count
-  count=$(echo "$devices" | wc -l | tr -d ' ')
-
-  if [[ -n "$arg" ]]; then
-    if [[ "$arg" == "all" ]]; then
-      echo "all"
-      return
-    fi
-    if [[ "$arg" =~ ^[0-9]+$ ]]; then
-      if echo "$devices" | awk '{print $1}' | grep -qx "$arg"; then
-        echo "$arg"
-        return
-      fi
-      if [[ "$arg" -ge 1 && "$arg" -le "$count" ]]; then
-        echo "$devices" | awk -v n="$arg" 'NR==n {print $1}'
-        return
-      fi
-    fi
-    echo "Unknown screen selection: $arg" >&2
-    exit 1
+  echo "$devices" | awk -F'\t' '{printf "  [%s] %s (%s)\n", $1, $2, $3}' >&2
+  read -r -p "Select screens (e.g. 0,1 or all). Blank for all: " selection
+  if [[ -z "$selection" || "$selection" == "all" ]]; then
+    echo "all"
+    return
   fi
 
-  echo "Defaulting to all screens." >&2
-  echo "all"
+  local result=()
+  local token
+  IFS=',' read -r -a tokens <<< "$selection"
+  for token in "${tokens[@]}"; do
+    token="${token// /}"
+    if [[ -z "$token" ]]; then
+      continue
+    fi
+    if ! echo "$devices" | awk '{print $1}' | grep -qx "$token"; then
+      echo "Unknown screen selection: $token" >&2
+      exit 1
+    fi
+    result+=("$token")
+  done
+
+  if [[ "${#result[@]}" -eq 0 ]]; then
+    echo "all"
+  else
+    local joined
+    joined=$(IFS=','; echo "${result[*]}")
+    echo "$joined"
+  fi
 }
 
-pick_audio_device() {
+pick_audio_interactive() {
   local label="$1"
-  local env_var="$2"
   local devices
-  devices=$(list_devices_pretty audio || true)
+  devices=$(list_audio_devices || true)
   if [[ -z "$devices" ]]; then
     echo "No audio devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
     exit 1
   fi
 
-  local chosen="${!env_var:-}"
-  if [[ -n "$chosen" ]]; then
-    echo "$chosen"
-    return
-  fi
-
   echo "Available audio devices:" >&2
-  echo "$devices" | awk '{printf "  [%s] %s\n", $1, substr($0, index($0,$2))}' >&2
+  echo "$devices" | awk -F'\t' '{printf "  [%s] %s\n", $1, $2}' >&2
+  local chosen=""
   read -r -p "Select $label device index (blank for first): " chosen
-
   if [[ -z "$chosen" ]]; then
     echo "$devices" | awk 'NR==1 {print $1}'
     return
@@ -102,6 +183,56 @@ pick_audio_device() {
   fi
   echo "Unknown audio selection: $chosen" >&2
   exit 1
+}
+
+resolve_screen_selection() {
+  local desired="$1"
+  local devices
+  devices=$(list_screens || true)
+  if [[ -z "$devices" ]]; then
+    echo ""
+    return
+  fi
+  if [[ -z "$desired" || "$desired" == "all" ]]; then
+    echo "all"
+    return
+  fi
+
+  local indices=()
+  local name
+  IFS=',' read -r -a names <<< "$desired"
+  for name in "${names[@]}"; do
+    name="${name# }"
+    name="${name% }"
+    local idx
+    idx=$(name_to_index video "$name")
+    if [[ -z "$idx" ]]; then
+      echo ""
+      return
+    fi
+    indices+=("$idx")
+  done
+
+  local joined
+  joined=$(IFS=','; echo "${indices[*]}")
+  echo "$joined"
+}
+
+record_signal_ok() {
+  local idx="$1"
+  local max_vol
+  max_vol=$(ffmpeg -nostdin -t 3 -f avfoundation -i ":${idx}" -af "volumedetect" -f null - 2>&1 | awk '/max_volume:/ {print $5; exit}')
+  if [[ -z "$max_vol" ]]; then
+    return 1
+  fi
+  python3 - <<PY
+import sys
+try:
+    val=float("${max_vol}")
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if val > float("${SILENCE_THRESHOLD_DB}") else 1)
+PY
 }
 
 get_video_indices() {
@@ -179,12 +310,81 @@ PY
 start_recording() {
   ensure_dirs
   local screen_arg="${1:-}"
-  local screen_sel
-  screen_sel=$(pick_screen "$screen_arg")
+  read_config
 
-  local sys_audio mic_audio
-  sys_audio=$(pick_audio_device "system audio" MEETING_SYS_AUDIO)
-  mic_audio=$(pick_audio_device "microphone" MEETING_MIC_AUDIO)
+  local screen_sel=""
+  local screen_names=""
+  local sys_audio=""
+  local mic_audio=""
+  local sys_name=""
+  local mic_name=""
+
+  if [[ -n "$screen_arg" ]]; then
+    if [[ "$screen_arg" == "all" ]]; then
+      screen_sel="all"
+    else
+      screen_sel=$(resolve_screen_selection "$screen_arg")
+    fi
+    if [[ -z "$screen_sel" ]]; then
+      echo "Unknown screen selection: $screen_arg" >&2
+      exit 1
+    fi
+  elif [[ -n "$CONFIG_SCREEN" ]]; then
+    screen_sel=$(resolve_screen_selection "$CONFIG_SCREEN")
+    screen_names="$CONFIG_SCREEN"
+  fi
+
+  if [[ -z "$screen_sel" ]]; then
+    echo "Saved screen selection not found. Please choose again." >&2
+    screen_sel=$(pick_screen_interactive)
+  fi
+
+  if [[ "$screen_sel" == "all" ]]; then
+    screen_names="all"
+  else
+    local idx
+    local names=()
+    IFS=',' read -r -a indices <<< "$screen_sel"
+    for idx in "${indices[@]}"; do
+      names+=("$(index_to_name video "$idx")")
+    done
+    screen_names=$(IFS=', '; echo "${names[*]}")
+  fi
+
+  local desired_sys="${MEETING_SYS_AUDIO:-$CONFIG_SYS_AUDIO}"
+  local desired_mic="${MEETING_MIC_AUDIO:-$CONFIG_MIC_AUDIO}"
+
+  if [[ -n "$desired_sys" ]]; then
+    sys_audio=$(name_to_index audio "$desired_sys" || true)
+    sys_name="$desired_sys"
+  fi
+  if [[ -n "$desired_mic" ]]; then
+    mic_audio=$(name_to_index audio "$desired_mic" || true)
+    mic_name="$desired_mic"
+  fi
+
+  if [[ -z "$sys_audio" ]]; then
+    echo "Saved system audio device not found. Please choose again." >&2
+    sys_audio=$(pick_audio_interactive "system audio")
+    sys_name=$(index_to_name audio "$sys_audio")
+  fi
+  if [[ -z "$mic_audio" ]]; then
+    echo "Saved microphone device not found. Please choose again." >&2
+    mic_audio=$(pick_audio_interactive "microphone")
+    mic_name=$(index_to_name audio "$mic_audio")
+  fi
+
+  if [[ "$sys_name" =~ ^[0-9]+$ || -z "$sys_name" ]]; then
+    sys_name=$(index_to_name audio "$sys_audio")
+  fi
+  if [[ "$mic_name" =~ ^[0-9]+$ || -z "$mic_name" ]]; then
+    mic_name=$(index_to_name audio "$mic_audio")
+  fi
+
+  CONFIG_SCREEN="$screen_names"
+  CONFIG_SYS_AUDIO="$sys_name"
+  CONFIG_MIC_AUDIO="$mic_name"
+  write_config
 
   local ts dir
   ts=$(date "+%Y-%m-%d_%H-%M")
@@ -201,7 +401,7 @@ start_recording() {
   if [[ "$screen_sel" == "all" ]]; then
     video_indices=("${all_indices[@]}")
   else
-    video_indices=("$screen_sel")
+    IFS=',' read -r -a video_indices <<< "$screen_sel"
   fi
   local video_input_count=${#video_indices[@]}
 
@@ -263,6 +463,77 @@ start_recording() {
 
   echo "Recording started in $dir" >&2
   echo "$dir"
+}
+
+test_setup() {
+  ensure_dirs
+  read_config
+
+  local screens
+  screens=$(list_screens || true)
+  if [[ -z "$screens" ]]; then
+    echo "No video devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
+    exit 1
+  fi
+
+  echo "Screens:" >&2
+  echo "$screens" | awk -F'\t' '{printf "  [%s] %s (%s)\n", $1, $2, $3}' >&2
+
+  local audio
+  audio=$(list_audio_devices || true)
+  if [[ -z "$audio" ]]; then
+    echo "No audio devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
+    exit 1
+  fi
+
+  echo "Audio devices:" >&2
+  echo "$audio" | awk -F'\t' '{printf "  [%s] %s\n", $1, $2}' >&2
+
+  local screen_sel
+  screen_sel=$(pick_screen_interactive)
+  local sys_audio
+  sys_audio=$(pick_audio_interactive "system audio")
+  local mic_audio
+  mic_audio=$(pick_audio_interactive "microphone")
+
+  local screen_names=""
+  if [[ "$screen_sel" == "all" ]]; then
+    screen_names="all"
+  else
+    local idx
+    local names=()
+    IFS=',' read -r -a indices <<< "$screen_sel"
+    for idx in "${indices[@]}"; do
+      names+=("$(index_to_name video "$idx")")
+    done
+    screen_names=$(IFS=', '; echo "${names[*]}")
+  fi
+
+  local sys_name
+  sys_name=$(index_to_name audio "$sys_audio")
+  local mic_name
+  mic_name=$(index_to_name audio "$mic_audio")
+
+  echo "Testing system audio for 3 seconds..." >&2
+  if record_signal_ok "$sys_audio"; then
+    echo "System audio signal: ✅" >&2
+  else
+    echo "System audio signal: ❌" >&2
+  fi
+
+  echo "Say something now..." >&2
+  if record_signal_ok "$mic_audio"; then
+    echo "Microphone signal: ✅" >&2
+  else
+    echo "Microphone signal: ❌" >&2
+  fi
+
+  CONFIG_SCREEN="$screen_names"
+  CONFIG_SYS_AUDIO="$sys_name"
+  CONFIG_MIC_AUDIO="$mic_name"
+  write_config
+
+  echo "Saved config to $CONFIG_FILE" >&2
 }
 
 stop_recording() {
@@ -495,6 +766,7 @@ Usage: meeting <command>
 
 Commands:
   start [screen]   Start screen recording (default: all screens)
+  test             One-time setup to pick devices and verify audio signal
   stop             Stop recording and generate transcript + notes
   list             List past meetings
   notes [id]        Show notes for a meeting (id from list or folder name)
@@ -508,6 +780,9 @@ main() {
     start)
       shift
       start_recording "${1:-}"
+      ;;
+    test)
+      test_setup
       ;;
     stop)
       stop_recording

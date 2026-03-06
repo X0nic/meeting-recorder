@@ -18,6 +18,7 @@ A macOS CLI for recording meetings (screen + system audio + mic), then transcrib
 ```bash
 meeting start          # record all screens (default)
 meeting start 1        # record a specific screen by index
+meeting test           # one-time setup: pick devices + verify audio signal
 meeting stop           # stop recording, transcribe, and create notes
 meeting list           # show past meetings with duration + summary
 meeting notes 1        # view notes by index or folder name
@@ -34,6 +35,14 @@ Each folder includes:
 - `audio.wav`
 - `transcript.txt`
 - `notes.md`
+
+## Config
+`meeting test` writes `~/.meeting-recorder/config` using device names:
+```
+screen=Capture screen 0
+system_audio=Microsoft Teams Audio
+mic=MacBook Air Microphone
+```
 
 ## Notes format
 ```
@@ -62,9 +71,9 @@ Brief 2-3 sentence overview
 
 ## Tips
 - On first run, macOS will prompt for Screen Recording permission. Approve it for your terminal.
-- For system audio capture, you may need a loopback device (e.g., BlackHole) and select it when prompted.
-- Use these env vars to skip prompts:
-  - `MEETING_SYS_AUDIO` / `MEETING_MIC_AUDIO`
+- Run `meeting test` once to save your preferred screen(s), system audio, and mic by device name.
+- Use these env vars to override device selection:
+  - `MEETING_SYS_AUDIO` / `MEETING_MIC_AUDIO` (device name or index)
   - `MEETINGS_DIR`
 
 ## Troubleshooting
@@ -72,4 +81,4 @@ Brief 2-3 sentence overview
   ```bash
   ffmpeg -f avfoundation -list_devices true -i ""
   ```
-- If audio isn’t captured, confirm the correct device indices and retry.
+- If audio isn’t captured, confirm the correct device names and retry `meeting test`.
