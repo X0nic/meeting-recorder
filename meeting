@@ -64,6 +64,174 @@ list_audio_devices() {
   list_devices_pretty audio || true
 }
 
+get_screen_bounds() {
+  osascript <<'OSA'
+use framework "AppKit"
+use scripting additions
+set screens to current application's NSScreen's screens()
+set out to ""
+set idx to 0
+repeat with s in screens
+  set frame to s's frame()
+  set x to frame's origin's x as integer
+  set y to frame's origin's y as integer
+  set w to frame's size's width as integer
+  set h to frame's size's height as integer
+  set out to out & idx & tab & x & tab & y & tab & w & tab & h & linefeed
+  set idx to idx + 1
+end repeat
+return out
+OSA
+}
+
+get_meeting_app_windows() {
+  osascript <<'OSA'
+use scripting additions
+set output to ""
+tell application "System Events"
+  set appNames to {"Microsoft Teams", "zoom.us", "Google Chrome", "Slack", "Webex", "FaceTime"}
+  repeat with appName in appNames
+    if exists (application process appName) then
+      tell application process appName
+        repeat with w in windows
+          set wtitle to ""
+          try
+            set wtitle to name of w
+          end try
+          if appName is "Google Chrome" then
+            if wtitle does not contain "meet.google.com" then
+              -- skip non-Meet windows
+            else
+              try
+                set pos to position of w
+                set size to size of w
+                set output to output & appName & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of size) & tab & (item 2 of size) & linefeed
+              end try
+              exit repeat
+            end if
+          else
+            try
+              set pos to position of w
+              set size to size of w
+              set output to output & appName & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of size) & tab & (item 2 of size) & linefeed
+            end try
+            exit repeat
+          end if
+        end repeat
+      end tell
+    end if
+  end repeat
+end tell
+return output
+OSA
+}
+
+detect_meeting_apps() {
+  local screen_bounds
+  screen_bounds=$(get_screen_bounds 2>/dev/null || true)
+  if [[ -z "$screen_bounds" ]]; then
+    return 0
+  fi
+
+  local window_data
+  window_data=$(get_meeting_app_windows 2>/dev/null || true)
+  if [[ -z "$window_data" ]]; then
+    echo "No meeting apps detected" >&2
+    return 0
+  fi
+
+  local screen_devices
+  screen_devices=$(list_screens || true)
+  if [[ -z "$screen_devices" ]]; then
+    return 0
+  fi
+
+  local output
+  output=$(SCREEN_BOUNDS="$screen_bounds" WINDOW_DATA="$window_data" SCREEN_DEVICES="$screen_devices" python3 - <<'PY' || true
+import os
+import re
+from collections import Counter
+
+def parse_lines(raw, expected):
+    lines = []
+    for line in raw.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) != expected:
+            continue
+        lines.append(parts)
+    return lines
+
+screen_bounds = parse_lines(os.environ.get("SCREEN_BOUNDS", ""), 5)
+window_data = parse_lines(os.environ.get("WINDOW_DATA", ""), 5)
+screen_devices = parse_lines(os.environ.get("SCREEN_DEVICES", ""), 3)
+
+if not screen_bounds or not window_data or not screen_devices:
+    raise SystemExit(0)
+
+screens = []
+for idx, x, y, w, h in screen_bounds:
+    try:
+        sx = float(x)
+        sy = float(y)
+        sw = float(w)
+        sh = float(h)
+        screens.append({
+            "idx": int(idx),
+            "x1": sx,
+            "y1": sy,
+            "x2": sx + sw,
+            "y2": sy + sh,
+        })
+    except ValueError:
+        continue
+
+capture_to_device = {}
+for dev_idx, name, _label in screen_devices:
+    m = re.match(r"Capture screen (\d+)", name)
+    if m:
+        capture_to_device[int(m.group(1))] = dev_idx
+
+if not capture_to_device:
+    raise SystemExit(0)
+
+detected = []
+for app, x, y, w, h in window_data:
+    try:
+        cx = float(x) + float(w) / 2.0
+        cy = float(y) + float(h) / 2.0
+    except ValueError:
+        continue
+    screen_idx = None
+    for s in screens:
+        if cx >= s["x1"] and cx <= s["x2"] and cy >= s["y1"] and cy <= s["y2"]:
+            screen_idx = s["idx"]
+            break
+    if screen_idx is None:
+        continue
+    if screen_idx not in capture_to_device:
+        continue
+    detected.append((app, screen_idx))
+
+if not detected:
+    raise SystemExit(0)
+
+counts = Counter([s for _app, s in detected])
+recommended = counts.most_common(1)[0][0]
+device_idx = capture_to_device.get(recommended)
+
+print("Detected meeting apps:")
+for app, sidx in detected:
+    print(f"  {app} -> Capture screen {sidx}")
+print("")
+print(f"Recommended screen: {device_idx} (Capture screen {recommended})")
+PY
+)
+
+  if [[ -n "$output" ]]; then
+    echo "$output" >&2
+  fi
+}
+
 read_config() {
   CONFIG_SCREEN=""
   CONFIG_SYS_AUDIO=""
@@ -491,6 +659,8 @@ test_setup() {
 
   echo "Audio devices:" >&2
   echo "$audio" | awk -F'\t' '{printf "  [%s] %s\n", $1, $2}' >&2
+
+  detect_meeting_apps
 
   local screen_sel
   screen_sel=$(pick_screen_interactive)
