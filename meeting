@@ -225,15 +225,30 @@ if not capture_to_device:
 detected = []
 for app, x, y, w, h in window_data:
     try:
-        cx = float(x) + float(w) / 2.0
-        cy = float(y) + float(h) / 2.0
+        wx = float(x)
+        wy = float(y)
     except ValueError:
         continue
     screen_idx = None
     for s in screens:
-        if cx >= s["x1"] and cx <= s["x2"] and cy >= s["y1"] and cy <= s["y2"]:
+        if wx >= s["x1"] and wx < s["x2"] and wy >= s["y1"] and wy < s["y2"]:
             screen_idx = s["idx"]
             break
+    # fallback: check which screen contains the most of the window
+    if screen_idx is None:
+        try:
+            ww = float(w)
+            wh = float(h)
+        except ValueError:
+            ww = wh = 0
+        best_overlap = 0
+        for s in screens:
+            ox = max(0, min(wx + ww, s["x2"]) - max(wx, s["x1"]))
+            oy = max(0, min(wy + wh, s["y2"]) - max(wy, s["y1"]))
+            overlap = ox * oy
+            if overlap > best_overlap:
+                best_overlap = overlap
+                screen_idx = s["idx"]
     if screen_idx is None:
         continue
     if screen_idx not in capture_to_device:
