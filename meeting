@@ -991,6 +991,200 @@ EOF
   echo "Recording stopped. Files saved to $dir" >&2
 }
 
+process_recording_file() {
+  local src="${1:-}"
+  if [[ -z "$src" ]]; then
+    echo "Usage: meeting process <file>" >&2
+    exit 1
+  fi
+  if [[ ! -f "$src" ]]; then
+    echo "File not found: $src" >&2
+    exit 1
+  fi
+
+  ensure_dirs
+
+  local ts dir
+  ts=$(date "+%Y-%m-%d_%H-%M")
+  dir="$MEETINGS_DIR/$ts"
+  mkdir -p "$dir"
+
+  local src_base src_ext src_ext_lc
+  src_base=$(basename "$src")
+  src_ext="${src_base##*.}"
+  if [[ "$src_ext" == "$src_base" ]]; then
+    src_ext=""
+  fi
+  src_ext_lc=$(printf "%s" "$src_ext" | tr '[:upper:]' '[:lower:]')
+
+  local recording
+  if [[ -n "$src_ext_lc" ]]; then
+    recording="$dir/recording.$src_ext_lc"
+  else
+    recording="$dir/recording"
+  fi
+
+  if cp -p "$src" "$recording" 2>/dev/null; then
+    :
+  elif ln -s "$src" "$recording" 2>/dev/null; then
+    :
+  else
+    echo "Failed to copy or symlink source file." >&2
+    exit 1
+  fi
+
+  local audio="$dir/audio.wav"
+  local extracted="no"
+  if [[ "$src_ext_lc" == "wav" ]]; then
+    if [[ "$recording" != "$audio" ]]; then
+      ln -s "$(basename "$recording")" "$audio" 2>/dev/null || cp -p "$recording" "$audio"
+    fi
+  else
+    echo "Extracting audio..." >&2
+    if command -v ffmpeg >/dev/null 2>&1; then
+      if ffmpeg -y -i "$recording" -vn -ac 1 -ar 16000 "$audio" >/dev/null 2>&1; then
+        extracted="yes"
+      else
+        echo "Audio extraction failed. Skipping transcription." >&2
+      fi
+    else
+      echo "ffmpeg not found. Skipping audio extraction and transcription." >&2
+    fi
+  fi
+
+  local transcript="$dir/transcript.txt"
+  local notes="$dir/notes.md"
+  local transcribed="no"
+  if [[ -f "$audio" ]]; then
+    echo "Transcribing..." >&2
+    if command -v whisper-cli >/dev/null 2>&1; then
+      local wmodel="${WHISPER_MODEL:-}"
+      if [[ -z "$wmodel" ]]; then
+        for mp in "$HOME/.local/share/whisper-models/ggml-base.bin" \
+                  "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
+                  "$HOME/.cache/whisper/ggml-base.bin" \
+                  "models/ggml-base.bin"; do
+          if [[ -f "$mp" ]]; then wmodel="$mp"; break; fi
+        done
+      fi
+      if [[ -z "$wmodel" ]]; then
+        echo "Whisper model not found. Set WHISPER_MODEL or download ggml-base.bin" >&2
+      else
+        if whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1; then
+          if [[ -f "$dir/transcript.txt" ]]; then
+            transcribed="yes"
+          fi
+        else
+          echo "Transcription failed. Skipping notes generation." >&2
+        fi
+      fi
+    else
+      echo "whisper-cli not found. Skipping transcription." >&2
+    fi
+  fi
+
+  local date_label
+  date_label=$(date "+%Y-%m-%d %H:%M")
+
+  local prompt
+  prompt=$(cat <<EOF
+Generate meeting notes in this exact format:
+
+# Meeting Notes — $date_label
+
+## Summary
+Brief 2-3 sentence overview
+
+## Key Discussion Points
+- Point 1
+- Point 2
+
+## Decisions Made
+- Decision 1
+- Decision 2
+
+## Action Items
+- [ ] Action item (@person if mentioned)
+
+## Follow-ups
+- Follow-up item
+
+## Raw Transcript
+[link to transcript.txt]
+
+Use the transcript below. Keep headings and structure exactly the same.
+EOF
+)
+
+  local notes_generated="no"
+  echo "Generating notes..." >&2
+  if command -v claude >/dev/null 2>&1; then
+    if [[ -f "$transcript" ]]; then
+      if {
+        echo "$prompt"
+        echo ""
+        echo "Transcript:"
+        cat "$transcript"
+      } | claude > "$notes" 2>/dev/null; then
+        if [[ -s "$notes" ]]; then
+          notes_generated="yes"
+        fi
+      else
+        echo "Claude CLI failed. Skipping notes generation." >&2
+      fi
+    else
+      echo "Transcript missing. Skipping notes generation." >&2
+    fi
+  else
+    echo "claude not found. Skipping notes generation." >&2
+  fi
+
+  if [[ "$notes_generated" != "yes" ]]; then
+    cat <<EOF > "$notes"
+# Meeting Notes — $date_label
+
+## Summary
+(Claude CLI not available or failed to generate notes.)
+
+## Key Discussion Points
+- 
+
+## Decisions Made
+- 
+
+## Action Items
+- [ ] 
+
+## Follow-ups
+- 
+
+## Raw Transcript
+transcript.txt
+EOF
+  fi
+
+  echo "Created meeting in $dir" >&2
+  echo "  Recording:  $recording" >&2
+  if [[ -f "$audio" ]]; then
+    echo "  Audio:      $audio" >&2
+  else
+    echo "  Audio:      (not created)" >&2
+  fi
+  if [[ -f "$transcript" ]]; then
+    echo "  Transcript: $transcript" >&2
+  else
+    echo "  Transcript: (not created)" >&2
+  fi
+  if [[ -f "$notes" ]]; then
+    echo "  Notes:      $notes" >&2
+  else
+    echo "  Notes:      (not created)" >&2
+  fi
+  if [[ "$extracted" == "yes" ]]; then
+    : # audio extracted
+  fi
+}
+
 list_meetings() {
   ensure_dirs
   local dirs
@@ -1090,6 +1284,7 @@ Usage: meeting <command>
 
 Commands:
   start [screen]   Start screen recording (default: all screens)
+  process <file>   Process an existing recording into transcript + notes
   test             Auto-detect devices and verify audio signal
   stop             Stop recording and generate transcript + notes
   list             List past meetings
@@ -1104,6 +1299,10 @@ main() {
     start)
       shift
       start_recording "${1:-}"
+      ;;
+    process)
+      shift
+      process_recording_file "${1:-}"
       ;;
     test)
       test_setup
