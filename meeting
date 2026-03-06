@@ -91,7 +91,7 @@ get_meeting_app_windows() {
 use scripting additions
 set output to ""
 tell application "System Events"
-  set appNames to {"Microsoft Teams", "zoom.us", "Google Chrome", "Slack", "Webex", "FaceTime"}
+  set appNames to {"Microsoft Teams", "MSTeams", "zoom.us", "Google Chrome", "Slack", "Webex", "FaceTime"}
   repeat with appName in appNames
     if exists (application process appName) then
       tell application process appName
