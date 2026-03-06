@@ -87,45 +87,66 @@ OSA
 }
 
 get_meeting_app_windows() {
-  osascript <<'OSA'
+  echo "[debug] Running meeting app detection..." >&2
+  local result
+  result=$(osascript <<'OSA'
 use scripting additions
 set output to ""
+set debugLog to ""
 tell application "System Events"
   set appNames to {"Microsoft Teams", "MSTeams", "zoom.us", "Google Chrome", "Slack", "Webex", "FaceTime"}
   repeat with appName in appNames
-    if exists (application process appName) then
-      tell application process appName
+    set appStr to appName as text
+    if exists (application process appStr) then
+      set debugLog to debugLog & "[debug] Found process: " & appStr & linefeed
+      tell application process appStr
+        set wcount to count of windows
+        set debugLog to debugLog & "[debug]   Window count: " & wcount & linefeed
         repeat with w in windows
           set wtitle to ""
           try
             set wtitle to name of w
           end try
-          if appName is "Google Chrome" then
+          set debugLog to debugLog & "[debug]   Window: " & wtitle & linefeed
+          if appStr is "Google Chrome" then
             if wtitle does not contain "meet.google.com" then
               -- skip non-Meet windows
             else
               try
                 set pos to position of w
-                set size to size of w
-                set output to output & appName & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of size) & tab & (item 2 of size) & linefeed
+                set sz to size of w
+                set debugLog to debugLog & "[debug]   pos=" & (item 1 of pos) & "," & (item 2 of pos) & " size=" & (item 1 of sz) & "," & (item 2 of sz) & linefeed
+                set output to output & appStr & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of sz) & tab & (item 2 of sz) & linefeed
+              on error errMsg
+                set debugLog to debugLog & "[debug]   ERROR getting pos/size: " & errMsg & linefeed
               end try
               exit repeat
             end if
           else
             try
               set pos to position of w
-              set size to size of w
-              set output to output & appName & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of size) & tab & (item 2 of size) & linefeed
+              set sz to size of w
+              set debugLog to debugLog & "[debug]   pos=" & (item 1 of pos) & "," & (item 2 of pos) & " size=" & (item 1 of sz) & "," & (item 2 of sz) & linefeed
+              set output to output & appStr & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of sz) & tab & (item 2 of sz) & linefeed
+            on error errMsg
+              set debugLog to debugLog & "[debug]   ERROR getting pos/size: " & errMsg & linefeed
             end try
             exit repeat
           end if
         end repeat
       end tell
+    else
+      set debugLog to debugLog & "[debug] Not found: " & appStr & linefeed
     end if
   end repeat
 end tell
-return output
+return debugLog & "---OUTPUT---" & linefeed & output
 OSA
+  2>&1)
+  # Split debug from output
+  echo "$result" | sed -n '/\[debug\]/p' >&2
+  echo "$result" | sed -n '/---OUTPUT---/,$ p' | tail -n +2
+}
 }
 
 detect_meeting_apps() {
