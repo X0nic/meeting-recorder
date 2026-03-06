@@ -891,7 +891,21 @@ stop_recording() {
       transcribed=true
     fi
   elif command -v whisper-cli >/dev/null 2>&1; then
-    whisper-cli -m "${WHISPER_MODEL:-base}" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1 || true
+    local wmodel="${WHISPER_MODEL:-}"
+    if [[ -z "$wmodel" ]]; then
+      for mp in "$HOME/.local/share/whisper-models/ggml-base.bin" \
+                "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
+                "$HOME/.cache/whisper/ggml-base.bin" \
+                "models/ggml-base.bin"; do
+        if [[ -f "$mp" ]]; then wmodel="$mp"; break; fi
+      done
+    fi
+    if [[ -z "$wmodel" ]]; then
+      echo "Whisper model not found. Set WHISPER_MODEL or download ggml-base.bin" >&2
+    else
+      echo "Transcribing with whisper-cli (model: $wmodel)..." >&2
+      whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" 2>&1 || true
+    fi
     if [[ -f "$dir/transcript.txt" ]]; then
       transcribed=true
     fi
