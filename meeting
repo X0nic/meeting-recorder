@@ -893,7 +893,8 @@ stop_recording() {
   elif command -v whisper-cli >/dev/null 2>&1; then
     local wmodel="${WHISPER_MODEL:-}"
     if [[ -z "$wmodel" ]]; then
-      for mp in "$HOME/.local/share/whisper-models/ggml-base.bin" \
+      for mp in "$HOME/.local/share/whisper-models/ggml-small.bin" \
+                "$HOME/.local/share/whisper-models/ggml-base.bin" \
                 "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
                 "$HOME/.cache/whisper/ggml-base.bin" \
                 "models/ggml-base.bin"; do
@@ -1060,7 +1061,8 @@ process_recording_file() {
     if command -v whisper-cli >/dev/null 2>&1; then
       local wmodel="${WHISPER_MODEL:-}"
       if [[ -z "$wmodel" ]]; then
-        for mp in "$HOME/.local/share/whisper-models/ggml-base.bin" \
+        for mp in "$HOME/.local/share/whisper-models/ggml-small.bin" \
+                "$HOME/.local/share/whisper-models/ggml-base.bin" \
                   "/opt/homebrew/share/whisper-cpp/models/ggml-base.bin" \
                   "$HOME/.cache/whisper/ggml-base.bin" \
                   "models/ggml-base.bin"; do
