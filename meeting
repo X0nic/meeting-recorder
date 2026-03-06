@@ -902,9 +902,18 @@ stop_recording() {
       done
     fi
     if [[ -z "$wmodel" ]]; then
-      echo "Whisper model not found. Set WHISPER_MODEL or download ggml-base.bin" >&2
-    else
-      echo "Transcribing with whisper-cli (model: $wmodel)..." >&2
+      echo "No whisper model found. Downloading ggml-small.bin (~466MB)..." >&2
+      mkdir -p "$HOME/.local/share/whisper-models"
+      if curl -L -o "$HOME/.local/share/whisper-models/ggml-small.bin" \
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" 2>/dev/null; then
+        wmodel="$HOME/.local/share/whisper-models/ggml-small.bin"
+        echo "Model downloaded." >&2
+      else
+        echo "Download failed. Set WHISPER_MODEL or manually download a model." >&2
+      fi
+    fi
+    if [[ -n "$wmodel" ]]; then
+      echo "Transcribing with whisper-cli (model: $(basename "$wmodel"))..." >&2
       whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" 2>&1 || true
     fi
     if [[ -f "$dir/transcript.txt" ]]; then
@@ -1070,8 +1079,17 @@ process_recording_file() {
         done
       fi
       if [[ -z "$wmodel" ]]; then
-        echo "Whisper model not found. Set WHISPER_MODEL or download ggml-base.bin" >&2
-      else
+        echo "No whisper model found. Downloading ggml-small.bin (~466MB)..." >&2
+        mkdir -p "$HOME/.local/share/whisper-models"
+        if curl -L -o "$HOME/.local/share/whisper-models/ggml-small.bin" \
+          "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" 2>/dev/null; then
+          wmodel="$HOME/.local/share/whisper-models/ggml-small.bin"
+          echo "Model downloaded." >&2
+        else
+          echo "Download failed. Set WHISPER_MODEL or manually download a model." >&2
+        fi
+      fi
+      if [[ -n "$wmodel" ]]; then
         if whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1; then
           if [[ -f "$dir/transcript.txt" ]]; then
             transcribed="yes"
