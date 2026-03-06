@@ -1212,15 +1212,23 @@ process_recording_file() {
       ln -s "$(basename "$recording")" "$audio" 2>/dev/null || cp -p "$recording" "$audio"
     fi
   else
-    echo "Extracting audio..." >&2
+    echo "Extracting audio from $(basename "$recording")..." >&2
     if command -v ffmpeg >/dev/null 2>&1; then
-      if ffmpeg -y -i "$recording" -vn -ac 1 -ar 16000 "$audio" >/dev/null 2>&1; then
+      local ffmpeg_out
+      ffmpeg_out=$(ffmpeg -y -i "$recording" -vn -ac 1 -ar 16000 "$audio" 2>&1)
+      if [[ -f "$audio" && -s "$audio" ]]; then
         extracted="yes"
+        local audio_size
+        audio_size=$(ls -lh "$audio" | awk '{print $5}')
+        local audio_dur
+        audio_dur=$(echo "$ffmpeg_out" | grep -o "time=[0-9:]*\.[0-9]*" | tail -1 | sed 's/time=//')
+        echo "  ✅ Audio extracted ($audio_size, ${audio_dur:-unknown duration})" >&2
       else
-        echo "Audio extraction failed. Skipping transcription." >&2
+        echo "  ❌ Audio extraction failed — file empty or missing." >&2
+        echo "  Check if the recording has audio: ffmpeg -i \"$recording\" 2>&1 | grep Audio" >&2
       fi
     else
-      echo "ffmpeg not found. Skipping audio extraction and transcription." >&2
+      echo "  ❌ ffmpeg not found. Install with: brew install ffmpeg" >&2
     fi
   fi
 
@@ -1228,21 +1236,31 @@ process_recording_file() {
   local notes="$dir/notes.md"
   local transcribed="no"
   if [[ -f "$audio" ]]; then
-    echo "Transcribing..." >&2
+    echo "Transcribing with whisper..." >&2
     if command -v whisper-cli >/dev/null 2>&1; then
       local wmodel
       wmodel=$(resolve_whisper_model_path)
       if [[ -n "$wmodel" ]]; then
+        echo "  Model: $(basename "$wmodel")" >&2
         if whisper-cli -m "$wmodel" -f "$audio" -otxt -of "$dir/transcript" >/dev/null 2>&1; then
-          if [[ -f "$dir/transcript.txt" ]]; then
+          if [[ -f "$dir/transcript.txt" && -s "$dir/transcript.txt" ]]; then
             transcribed="yes"
+            local word_count
+            word_count=$(wc -w < "$dir/transcript.txt" | tr -d ' ')
+            local line_count
+            line_count=$(wc -l < "$dir/transcript.txt" | tr -d ' ')
+            echo "  ✅ Transcript: $word_count words, $line_count segments" >&2
+          else
+            echo "  ❌ Transcript empty — recording may have no audio" >&2
           fi
         else
-          echo "Transcription failed. Skipping notes generation." >&2
+          echo "  ❌ Transcription failed" >&2
         fi
+      else
+        echo "  ❌ No whisper model. Run: meeting model small" >&2
       fi
     else
-      echo "whisper-cli not found. Skipping transcription." >&2
+      echo "  ❌ whisper-cli not found. Install with: brew install whisper-cpp" >&2
     fi
   fi
 
@@ -1280,9 +1298,12 @@ EOF
 )
 
   local notes_generated="no"
-  echo "Generating notes..." >&2
+  echo "Generating notes with Claude..." >&2
   if command -v claude >/dev/null 2>&1; then
-    if [[ -f "$transcript" ]]; then
+    if [[ -f "$transcript" && -s "$transcript" ]]; then
+      local transcript_words
+      transcript_words=$(wc -w < "$transcript" | tr -d ' ')
+      echo "  Sending $transcript_words words to Claude..." >&2
       if {
         echo "$prompt"
         echo ""
@@ -1291,15 +1312,18 @@ EOF
       } | claude > "$notes" 2>/dev/null; then
         if [[ -s "$notes" ]]; then
           notes_generated="yes"
+          echo "  ✅ Notes generated" >&2
+        else
+          echo "  ❌ Claude returned empty response" >&2
         fi
       else
-        echo "Claude CLI failed. Skipping notes generation." >&2
+        echo "  ❌ Claude CLI failed" >&2
       fi
     else
-      echo "Transcript missing. Skipping notes generation." >&2
+      echo "  ⏭️  Skipped — transcript is empty (no audio captured?)" >&2
     fi
   else
-    echo "claude not found. Skipping notes generation." >&2
+    echo "  ❌ claude not found. Install Claude Code: https://docs.anthropic.com/en/docs/claude-code" >&2
   fi
 
   if [[ "$notes_generated" != "yes" ]]; then
