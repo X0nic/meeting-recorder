@@ -834,7 +834,16 @@ test_setup() {
   CONFIG_MIC_AUDIO="$mic_name"
   write_config
 
-  echo "Saved config to $CONFIG_FILE" >&2
+  echo "" >&2
+  echo "✅ Config saved to $CONFIG_FILE" >&2
+  echo "" >&2
+  echo "To start recording, run:" >&2
+  echo "  meeting start" >&2
+  echo "" >&2
+  echo "Current settings:" >&2
+  echo "  Screen:       $screen_names" >&2
+  echo "  System audio: $sys_name" >&2
+  echo "  Mic:          $mic_name" >&2
 }
 
 stop_recording() {
