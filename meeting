@@ -87,27 +87,20 @@ OSA
 }
 
 get_meeting_app_windows() {
-  echo "[debug] Running meeting app detection..." >&2
-  local result
-  result=$(osascript <<'OSA'
+  osascript <<'OSA'
 use scripting additions
 set output to ""
-set debugLog to ""
 tell application "System Events"
   set appNames to {"Microsoft Teams", "MSTeams", "zoom.us", "Google Chrome", "Slack", "Webex", "FaceTime"}
   repeat with appName in appNames
     set appStr to appName as text
     if exists (application process appStr) then
-      set debugLog to debugLog & "[debug] Found process: " & appStr & linefeed
       tell application process appStr
-        set wcount to count of windows
-        set debugLog to debugLog & "[debug]   Window count: " & wcount & linefeed
         repeat with w in windows
           set wtitle to ""
           try
             set wtitle to name of w
           end try
-          set debugLog to debugLog & "[debug]   Window: " & wtitle & linefeed
           if appStr is "Google Chrome" then
             if wtitle does not contain "meet.google.com" then
               -- skip non-Meet windows
@@ -115,10 +108,7 @@ tell application "System Events"
               try
                 set pos to position of w
                 set sz to size of w
-                set debugLog to debugLog & "[debug]   pos=" & (item 1 of pos) & "," & (item 2 of pos) & " size=" & (item 1 of sz) & "," & (item 2 of sz) & linefeed
                 set output to output & appStr & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of sz) & tab & (item 2 of sz) & linefeed
-              on error errMsg
-                set debugLog to debugLog & "[debug]   ERROR getting pos/size: " & errMsg & linefeed
               end try
               exit repeat
             end if
@@ -126,26 +116,17 @@ tell application "System Events"
             try
               set pos to position of w
               set sz to size of w
-              set debugLog to debugLog & "[debug]   pos=" & (item 1 of pos) & "," & (item 2 of pos) & " size=" & (item 1 of sz) & "," & (item 2 of sz) & linefeed
               set output to output & appStr & tab & (item 1 of pos) & tab & (item 2 of pos) & tab & (item 1 of sz) & tab & (item 2 of sz) & linefeed
-            on error errMsg
-              set debugLog to debugLog & "[debug]   ERROR getting pos/size: " & errMsg & linefeed
             end try
             exit repeat
           end if
         end repeat
       end tell
-    else
-      set debugLog to debugLog & "[debug] Not found: " & appStr & linefeed
     end if
   end repeat
 end tell
-return debugLog & "---OUTPUT---" & linefeed & output
+return output
 OSA
-  2>&1)
-  # Split debug from output
-  echo "$result" | sed -n '/\[debug\]/p' >&2
-  echo "$result" | sed -n '/---OUTPUT---/,$ p' | tail -n +2
 }
 
 detect_meeting_apps() {
@@ -158,7 +139,6 @@ detect_meeting_apps() {
   local window_data
   window_data=$(get_meeting_app_windows || true)
   if [[ -z "$window_data" ]]; then
-    echo "No meeting apps detected" >&2
     return 0
   fi
 
@@ -168,8 +148,8 @@ detect_meeting_apps() {
     return 0
   fi
 
-  local output
-  output=$(SCREEN_BOUNDS="$screen_bounds" WINDOW_DATA="$window_data" SCREEN_DEVICES="$screen_devices" python3 - <<'PY' || true
+  local recommended
+  recommended=$(SCREEN_BOUNDS="$screen_bounds" WINDOW_DATA="$window_data" SCREEN_DEVICES="$screen_devices" python3 - <<'PY' || true
 import os
 import re
 from collections import Counter
@@ -187,13 +167,7 @@ screen_bounds = parse_lines(os.environ.get("SCREEN_BOUNDS", ""), 5)
 window_data = parse_lines(os.environ.get("WINDOW_DATA", ""), 5)
 screen_devices = parse_lines(os.environ.get("SCREEN_DEVICES", ""), 3)
 
-import sys
-print(f"[debug] Python: screen_bounds={screen_bounds}", file=sys.stderr)
-print(f"[debug] Python: window_data={window_data}", file=sys.stderr)
-print(f"[debug] Python: screen_devices={screen_devices}", file=sys.stderr)
-
 if not screen_bounds or not window_data or not screen_devices:
-    print("[debug] Python: missing data, exiting", file=sys.stderr)
     raise SystemExit(0)
 
 screens = []
@@ -223,6 +197,7 @@ if not capture_to_device:
     raise SystemExit(0)
 
 detected = []
+seen = set()
 for app, x, y, w, h in window_data:
     try:
         wx = float(x)
@@ -253,6 +228,12 @@ for app, x, y, w, h in window_data:
         continue
     if screen_idx not in capture_to_device:
         continue
+    if app in ("MSTeams", "Microsoft Teams"):
+        app = "Microsoft Teams"
+    key = (app, screen_idx)
+    if key in seen:
+        continue
+    seen.add(key)
     detected.append((app, screen_idx))
 
 if not detected:
@@ -262,16 +243,17 @@ counts = Counter([s for _app, s in detected])
 recommended = counts.most_common(1)[0][0]
 device_idx = capture_to_device.get(recommended)
 
-print("Detected meeting apps:")
+import sys
+print("Detected meeting apps:", file=sys.stderr)
 for app, sidx in detected:
-    print(f"  {app} -> Capture screen {sidx}")
-print("")
-print(f"Recommended screen: {device_idx} (Capture screen {recommended})")
+    print(f"  {app} -> Capture screen {sidx}", file=sys.stderr)
+print("", file=sys.stderr)
+print(f"Recommended screen: {device_idx} (Capture screen {recommended})", file=sys.stderr)
+print(device_idx)
 PY
 )
-
-  if [[ -n "$output" ]]; then
-    echo "$output" >&2
+  if [[ -n "$recommended" ]]; then
+    echo "$recommended"
   fi
 }
 
@@ -432,21 +414,41 @@ resolve_screen_selection() {
   echo "$joined"
 }
 
-record_signal_ok() {
+audio_signal_detected() {
   local idx="$1"
-  local max_vol
-  max_vol=$(ffmpeg -nostdin -t 3 -f avfoundation -i ":${idx}" -af "volumedetect" -f null - 2>&1 | awk '/max_volume:/ {print $5; exit}')
-  if [[ -z "$max_vol" ]]; then
+  local outfile="/tmp/meeting-test-${idx}.wav"
+  rm -f "$outfile"
+  if ! ffmpeg -nostdin -y -f avfoundation -i ":${idx}" -t 3 -f wav -ac 1 -ar 16000 "$outfile" >/dev/null 2>&1; then
+    rm -f "$outfile"
+    return 1
+  fi
+  local mean_vol
+  mean_vol=$(ffmpeg -nostdin -i "$outfile" -af volumedetect -f null /dev/null 2>&1 | awk -F': ' '/mean_volume/ {gsub(/ dB/,"",$2); print $2; exit}')
+  rm -f "$outfile"
+  if [[ -z "$mean_vol" ]]; then
     return 1
   fi
   python3 - <<PY
 import sys
 try:
-    val=float("${max_vol}")
+    val=float("${mean_vol}")
 except ValueError:
     sys.exit(1)
-sys.exit(0 if val > float("${SILENCE_THRESHOLD_DB}") else 1)
+sys.exit(0 if val > -40.0 else 1)
 PY
+}
+
+classify_audio_device() {
+  local name="$1"
+  local class="unknown"
+  shopt -s nocasematch
+  if [[ "$name" == *Teams* || "$name" == *Zoom* || "$name" == *Meet* || "$name" == *Webex* || "$name" == *Audio* ]]; then
+    class="system"
+  elif [[ "$name" == *Microphone* || "$name" == *AirPods* || "$name" == *Headset* || "$name" == *Input* ]]; then
+    class="mic"
+  fi
+  shopt -u nocasematch
+  echo "$class"
 }
 
 get_video_indices() {
@@ -693,6 +695,18 @@ test_setup() {
   echo "Screens:" >&2
   echo "$screens" | awk -F'\t' '{printf "  [%s] %s (%s)\n", $1, $2, $3}' >&2
 
+  local recommended_screen=""
+  recommended_screen=$(detect_meeting_apps || true)
+
+  local screen_sel=""
+  if [[ -n "$recommended_screen" ]]; then
+    screen_sel="$recommended_screen"
+    echo "Auto-selected screen: [$screen_sel] $(index_to_name video "$screen_sel")" >&2
+  else
+    screen_sel="all"
+    echo "No meeting app recommendation found. Using all screens." >&2
+  fi
+
   local audio
   audio=$(list_audio_devices || true)
   if [[ -z "$audio" ]]; then
@@ -700,49 +714,120 @@ test_setup() {
     exit 1
   fi
 
-  echo "Audio devices:" >&2
-  echo "$audio" | awk -F'\t' '{printf "  [%s] %s\n", $1, $2}' >&2
+  declare -A signal_map
+  declare -A class_map
+  declare -A name_map
+  local audio_indices=()
 
-  detect_meeting_apps
+  echo "Audio device signal check (3s each):" >&2
+  while IFS=$'\t' read -r idx name; do
+    if [[ -z "$idx" || -z "$name" ]]; then
+      continue
+    fi
+    audio_indices+=("$idx")
+    name_map["$idx"]="$name"
+    class_map["$idx"]="$(classify_audio_device "$name")"
+    if audio_signal_detected "$idx"; then
+      signal_map["$idx"]="ok"
+      echo "  [$idx] $name — ✅ (${class_map[$idx]})" >&2
+    else
+      signal_map["$idx"]="no"
+      echo "  [$idx] $name — ❌ (${class_map[$idx]})" >&2
+    fi
+  done <<< "$audio"
 
-  local screen_sel
-  screen_sel=$(pick_screen_interactive)
-  local sys_audio
-  sys_audio=$(pick_audio_interactive "system audio")
-  local mic_audio
-  mic_audio=$(pick_audio_interactive "microphone")
+  if [[ "${#audio_indices[@]}" -eq 0 ]]; then
+    echo "No audio devices found. Try: ffmpeg -f avfoundation -list_devices true -i \"\"" >&2
+    exit 1
+  fi
+
+  local first_sys=""
+  local first_sys_signal=""
+  local first_mic=""
+  local first_mic_signal=""
+  local first_signal=""
+  local first_any="${audio_indices[0]}"
+
+  local idx
+  for idx in "${audio_indices[@]}"; do
+    if [[ "${signal_map[$idx]}" == "ok" && -z "$first_signal" ]]; then
+      first_signal="$idx"
+    fi
+    if [[ "${class_map[$idx]}" == "system" ]]; then
+      if [[ -z "$first_sys" ]]; then
+        first_sys="$idx"
+      fi
+      if [[ "${signal_map[$idx]}" == "ok" && -z "$first_sys_signal" ]]; then
+        first_sys_signal="$idx"
+      fi
+    elif [[ "${class_map[$idx]}" == "mic" ]]; then
+      if [[ -z "$first_mic" ]]; then
+        first_mic="$idx"
+      fi
+      if [[ "${signal_map[$idx]}" == "ok" && -z "$first_mic_signal" ]]; then
+        first_mic_signal="$idx"
+      fi
+    fi
+  done
+
+  if [[ -n "$first_mic" && "${signal_map[$first_mic]}" != "ok" ]]; then
+    echo "Say something now..." >&2
+    if audio_signal_detected "$first_mic"; then
+      signal_map["$first_mic"]="ok"
+      first_mic_signal="$first_mic"
+      echo "Microphone signal (retry): ✅" >&2
+    else
+      signal_map["$first_mic"]="no"
+      echo "Microphone signal (retry): ❌" >&2
+    fi
+  fi
+
+  local sys_audio=""
+  local mic_audio=""
+
+  if [[ -n "$first_sys_signal" ]]; then
+    sys_audio="$first_sys_signal"
+  elif [[ -n "$first_sys" ]]; then
+    sys_audio="$first_sys"
+  elif [[ -n "$first_signal" ]]; then
+    sys_audio="$first_signal"
+  else
+    sys_audio="$first_any"
+  fi
+
+  if [[ -n "$first_mic_signal" ]]; then
+    mic_audio="$first_mic_signal"
+  elif [[ -n "$first_mic" ]]; then
+    mic_audio="$first_mic"
+  elif [[ -n "$first_signal" ]]; then
+    mic_audio="$first_signal"
+  else
+    mic_audio="$first_any"
+  fi
 
   local screen_names=""
   if [[ "$screen_sel" == "all" ]]; then
     screen_names="all"
   else
-    local idx
-    local names=()
-    IFS=',' read -r -a indices <<< "$screen_sel"
-    for idx in "${indices[@]}"; do
-      names+=("$(index_to_name video "$idx")")
-    done
-    screen_names=$(IFS=', '; echo "${names[*]}")
+    screen_names="$(index_to_name video "$screen_sel")"
   fi
 
-  local sys_name
-  sys_name=$(index_to_name audio "$sys_audio")
-  local mic_name
-  mic_name=$(index_to_name audio "$mic_audio")
-
-  echo "Testing system audio for 3 seconds..." >&2
-  if record_signal_ok "$sys_audio"; then
-    echo "System audio signal: ✅" >&2
-  else
-    echo "System audio signal: ❌" >&2
+  local sys_name="${name_map[$sys_audio]}"
+  local mic_name="${name_map[$mic_audio]}"
+  local sys_mark="❌"
+  local mic_mark="❌"
+  if [[ "${signal_map[$sys_audio]}" == "ok" ]]; then
+    sys_mark="✅"
+  fi
+  if [[ "${signal_map[$mic_audio]}" == "ok" ]]; then
+    mic_mark="✅"
   fi
 
-  echo "Say something now..." >&2
-  if record_signal_ok "$mic_audio"; then
-    echo "Microphone signal: ✅" >&2
-  else
-    echo "Microphone signal: ❌" >&2
-  fi
+  echo "" >&2
+  echo "Summary:" >&2
+  echo "  Screens: $screen_names" >&2
+  echo "  System audio: [$sys_audio] $sys_name $sys_mark" >&2
+  echo "  Microphone: [$mic_audio] $mic_name $mic_mark" >&2
 
   CONFIG_SCREEN="$screen_names"
   CONFIG_SYS_AUDIO="$sys_name"
@@ -982,7 +1067,7 @@ Usage: meeting <command>
 
 Commands:
   start [screen]   Start screen recording (default: all screens)
-  test             One-time setup to pick devices and verify audio signal
+  test             Auto-detect devices and verify audio signal
   stop             Stop recording and generate transcript + notes
   list             List past meetings
   notes [id]        Show notes for a meeting (id from list or folder name)
