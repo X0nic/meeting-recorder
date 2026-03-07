@@ -25,8 +25,13 @@ final class AudioDeviceService: ObservableObject {
     }
 
     private func loadAudioDevices() async -> [AudioDevice] {
+        var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInMicrophone, .externalUnknown]
+        if #available(macOS 14.0, *) {
+            deviceTypes.append(.microphone)
+        }
+
         let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.microphone, .externalUnknown],
+            deviceTypes: deviceTypes,
             mediaType: .audio,
             position: .unspecified
         ).devices
@@ -34,11 +39,20 @@ final class AudioDeviceService: ObservableObject {
         let ffmpegMap = (try? await ffmpegAudioDeviceIndexByName()) ?? [:]
         return devices.compactMap { device in
             let name = device.localizedName
+            let isMicType: Bool = {
+                if device.deviceType == .builtInMicrophone {
+                    return true
+                }
+                if #available(macOS 14.0, *) {
+                    return device.deviceType == .microphone
+                }
+                return false
+            }()
             return AudioDevice(
                 id: device.uniqueID,
                 name: name,
                 isBlackHole: name.localizedCaseInsensitiveContains("blackhole"),
-                isMicrophone: name.localizedCaseInsensitiveContains("microphone") || name.localizedCaseInsensitiveContains("airpods") || device.deviceType == .microphone,
+                isMicrophone: name.localizedCaseInsensitiveContains("microphone") || name.localizedCaseInsensitiveContains("airpods") || isMicType,
                 avFoundationIndex: ffmpegMap[name]
             )
         }

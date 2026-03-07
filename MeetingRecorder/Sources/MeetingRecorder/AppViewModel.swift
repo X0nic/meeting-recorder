@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 import AppKit
-import ScreenCaptureKit
+import CoreGraphics
 
 @MainActor
 final class AppViewModel: ObservableObject {
@@ -11,15 +11,26 @@ final class AppViewModel: ObservableObject {
         .init(label: "Transcribing (model: ggml-small.bin)...", status: .pending),
         .init(label: "Generating notes...", status: .pending)
     ]
-    @Published var selectedSystemAudioID: String?
-    @Published var selectedMicID: String?
-    @Published var selectedScreenID: CGDirectDisplayID?
+    @Published var selectedSystemAudioID: String? {
+        didSet { selectionDidChange() }
+    }
+    @Published var selectedMicID: String? {
+        didSet { selectionDidChange() }
+    }
+    @Published var selectedScreenID: CGDirectDisplayID? {
+        didSet { selectionDidChange() }
+    }
     @Published var elapsedText = "00:00"
     @Published var transcriptWordCount: Int = 0
     @Published var latestResult: ProcessingResult?
     @Published var statusMessage = ""
     @Published var historySearch = ""
     @Published var shouldPresentFileImporter = false
+    @Published var preflightBlackHoleReady = false
+    @Published var preflightMappingReady = false
+    @Published var preflightSystemSignalReady = false
+    @Published var preflightMicSignalReady = false
+    @Published var preflightSignalRunning = false
 
     let deviceService = AudioDeviceService()
     let meter = AudioLevelMonitor()
@@ -36,6 +47,15 @@ final class AppViewModel: ObservableObject {
 
     private var elapsedTimer: Timer?
     private var recordingStartedAt: Date?
+    private var suppressSelectionChangeHandling = false
+
+    var canStartRecording: Bool {
+        preflightBlackHoleReady
+            && preflightMappingReady
+            && preflightSystemSignalReady
+            && preflightMicSignalReady
+            && !preflightSignalRunning
+    }
 
     func onAppear() {
         Task {
@@ -48,6 +68,7 @@ final class AppViewModel: ObservableObject {
     func refreshDevicesAndApps() async {
         await deviceService.refresh()
 
+        suppressSelectionChangeHandling = true
         if selectedSystemAudioID == nil {
             selectedSystemAudioID = deviceService.defaultSystemAudio()?.id
         }
@@ -62,9 +83,16 @@ final class AppViewModel: ObservableObject {
         if let recommended = detector.recommendedScreenID {
             selectedScreenID = recommended
         }
+        suppressSelectionChangeHandling = false
+        updateStaticPreflightChecks()
     }
 
     func startRecording() {
+        guard canStartRecording else {
+            statusMessage = "Run preflight and confirm BlackHole, mapping, and both signal checks pass."
+            return
+        }
+
         guard let config = makeConfiguration() else {
             statusMessage = "Select screen, BlackHole 2ch, and microphone first."
             return
@@ -146,10 +174,71 @@ final class AppViewModel: ObservableObject {
         shouldPresentFileImporter = true
     }
 
+    func runSignalPreflightCheck() {
+        guard !preflightSignalRunning else { return }
+        guard let config = makeConfiguration() else {
+            statusMessage = "Select screen, BlackHole 2ch, and microphone first."
+            return
+        }
+
+        preflightSignalRunning = true
+        preflightSystemSignalReady = false
+        preflightMicSignalReady = false
+        statusMessage = "Checking audio signal for 3 seconds. Play meeting audio and speak."
+
+        Task {
+            var systemPeak: Double = 0
+            var micPeak: Double = 0
+            do {
+                try meter.start(systemDeviceID: config.systemAudio.id, micDeviceID: config.microphone.id)
+                for _ in 0..<30 {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    systemPeak = max(systemPeak, meter.systemLevel)
+                    micPeak = max(micPeak, meter.micLevel)
+                }
+                meter.stop()
+
+                preflightSystemSignalReady = systemPeak > 0.03
+                preflightMicSignalReady = micPeak > 0.03
+                preflightSignalRunning = false
+                if preflightSystemSignalReady && preflightMicSignalReady {
+                    statusMessage = "Signal check passed for system audio and microphone."
+                } else {
+                    statusMessage = "Signal check failed. Ensure BlackHole routing is active and retry."
+                }
+            } catch {
+                meter.stop()
+                preflightSignalRunning = false
+                statusMessage = "Signal check failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func requestPermissions() {
         AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        Task {
-            try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+        }
+    }
+
+    private func selectionDidChange() {
+        guard !suppressSelectionChangeHandling else { return }
+        updateStaticPreflightChecks()
+        preflightSystemSignalReady = false
+        preflightMicSignalReady = false
+    }
+
+    private func updateStaticPreflightChecks() {
+        let hasBlackHole = deviceService.audioDevices.contains(where: \.isBlackHole)
+        let selectedSystem = deviceService.audioDevices.first(where: { $0.id == selectedSystemAudioID })
+        preflightBlackHoleReady = hasBlackHole && (selectedSystem?.isBlackHole == true)
+
+        if let config = makeConfiguration() {
+            preflightMappingReady = config.screen.ffmpegIndex != nil
+                && config.systemAudio.avFoundationIndex != nil
+                && config.microphone.avFoundationIndex != nil
+        } else {
+            preflightMappingReady = false
         }
     }
 

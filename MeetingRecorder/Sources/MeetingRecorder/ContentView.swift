@@ -103,11 +103,14 @@ struct ContentView: View {
                 }
             }
 
+            preflightSection
+
             Button(action: model.startRecording) {
                 Text("Start Recording")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!model.canStartRecording)
         }
     }
 
@@ -194,7 +197,7 @@ struct ContentView: View {
 
             TextField("Search transcripts and notes", text: $model.historySearch)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: model.historySearch) { _, _ in
+                .onChange(of: model.historySearch) { _ in
                     model.refreshHistory()
                 }
 
@@ -231,6 +234,58 @@ struct ContentView: View {
                 }
             }
             .frame(maxHeight: 180)
+        }
+    }
+
+    private var preflightSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Preflight")
+                .font(.subheadline.weight(.semibold))
+
+            preflightRow(
+                label: "BlackHole selected for System Audio",
+                ok: model.preflightBlackHoleReady
+            )
+            preflightRow(
+                label: "ffmpeg mapping valid (screen + system + mic)",
+                ok: model.preflightMappingReady
+            )
+            preflightRow(
+                label: "System audio signal detected",
+                ok: model.preflightSystemSignalReady
+            )
+            preflightRow(
+                label: "Microphone signal detected",
+                ok: model.preflightMicSignalReady
+            )
+
+            Button {
+                model.runSignalPreflightCheck()
+            } label: {
+                if model.preflightSignalRunning {
+                    Label("Checking...", systemImage: "waveform")
+                } else {
+                    Label("Run Signal Check (3s)", systemImage: "waveform")
+                }
+            }
+            .disabled(!model.preflightBlackHoleReady || !model.preflightMappingReady || model.preflightSignalRunning)
+
+            if !model.statusMessage.isEmpty {
+                Text(model.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(8)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func preflightRow(label: String, ok: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(ok ? .green : .red)
+            Text(label)
+                .font(.caption)
         }
     }
 
