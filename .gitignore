@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.build-scratch/
+.clang-module-cache/
+.derived-data/
+.derived-data-release/
+.derived-data-release-universal/
+.swift-module-cache/
+.swiftpm/
+*.xcuserstate
+xcuserdata/

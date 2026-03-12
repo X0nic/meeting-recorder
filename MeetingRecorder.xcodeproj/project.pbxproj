@@ -1,0 +1,456 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000011 /* MeetingRecorderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* MeetingRecorderApp.swift */; };
+		A10000000000000000000012 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* AppModel.swift */; };
+		A10000000000000000000013 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* Models.swift */; };
+		A10000000000000000000014 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* AudioCaptureService.swift */; };
+		A10000000000000000000015 /* MeetingDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* MeetingDetector.swift */; };
+		A10000000000000000000016 /* MeetingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* MeetingStore.swift */; };
+		A10000000000000000000017 /* ProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* ProcessRunner.swift */; };
+		A10000000000000000000018 /* ProcessingPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* ProcessingPipeline.swift */; };
+		A10000000000000000000019 /* CaptureBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* CaptureBackend.swift */; };
+		A1000000000000000000001A /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000A /* Components.swift */; };
+		A1000000000000000000001B /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000B /* MainWindowView.swift */; };
+		A1000000000000000000001C /* ScreenCaptureKitAudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000E /* ScreenCaptureKitAudioCaptureService.swift */; };
+		A1000000000000000000001D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000F /* Assets.xcassets */; };
+		B20000000000000000000011 /* NativeAudioProbeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* NativeAudioProbeApp.swift */; };
+		B20000000000000000000012 /* AudioTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* AudioTestView.swift */; };
+		B20000000000000000000013 /* AudioTestService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* AudioTestService.swift */; };
+		B20000000000000000000014 /* AudioFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* AudioFileWriter.swift */; };
+		B20000000000000000000015 /* AudioMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* AudioMeter.swift */; };
+		B20000000000000000000016 /* ProbeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* ProbeModels.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000001 /* MeetingRecorderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/MeetingRecorderApp.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/AppModel.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Models.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000004 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/AudioCaptureService.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000005 /* MeetingDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/MeetingDetector.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000006 /* MeetingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/MeetingStore.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000007 /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/ProcessRunner.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000008 /* ProcessingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/ProcessingPipeline.swift; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000009 /* CaptureBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/CaptureBackend.swift; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000000A /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Views/Components.swift; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000000B /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Views/MainWindowView.swift; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = MeetingRecorderApp/Info.plist; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000000D /* Meeting Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Meeting Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000000E /* ScreenCaptureKitAudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeetingRecorder/Services/ScreenCaptureKitAudioCaptureService.swift; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MeetingRecorderApp/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000001 /* NativeAudioProbeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/NativeAudioProbeApp.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000002 /* AudioTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/AudioTestView.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000003 /* AudioTestService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/AudioTestService.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000004 /* AudioFileWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/AudioFileWriter.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000005 /* AudioMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/AudioMeter.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000006 /* ProbeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/NativeAudioProbe/ProbeModels.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = NativeAudioProbe/Info.plist; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000008 /* Native Audio Probe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Native Audio Probe.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000031 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000032 /* Sources */,
+				A10000000000000000000033 /* MeetingRecorderApp */,
+				B20000000000000000000031 /* NativeAudioProbe */,
+				B20000000000000000000032 /* Probe Sources */,
+				A10000000000000000000034 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000032 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000001 /* MeetingRecorderApp.swift */,
+				A10000000000000000000002 /* AppModel.swift */,
+				A10000000000000000000003 /* Models.swift */,
+				A10000000000000000000035 /* Services */,
+				A10000000000000000000036 /* Views */,
+			);
+			path = Sources/MeetingRecorder;
+			sourceTree = SOURCE_ROOT;
+		};
+		A10000000000000000000033 /* MeetingRecorderApp */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000C /* Info.plist */,
+				A1000000000000000000000F /* Assets.xcassets */,
+			);
+			path = MeetingRecorderApp;
+			sourceTree = SOURCE_ROOT;
+		};
+		A10000000000000000000034 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000D /* Meeting Recorder.app */,
+				B20000000000000000000008 /* Native Audio Probe.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000035 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000004 /* AudioCaptureService.swift */,
+				A10000000000000000000009 /* CaptureBackend.swift */,
+				A10000000000000000000005 /* MeetingDetector.swift */,
+				A10000000000000000000006 /* MeetingStore.swift */,
+				A10000000000000000000007 /* ProcessRunner.swift */,
+				A10000000000000000000008 /* ProcessingPipeline.swift */,
+				A1000000000000000000000E /* ScreenCaptureKitAudioCaptureService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000036 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000A /* Components.swift */,
+				A1000000000000000000000B /* MainWindowView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B20000000000000000000031 /* NativeAudioProbe */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000007 /* Info.plist */,
+			);
+			path = NativeAudioProbe;
+			sourceTree = SOURCE_ROOT;
+		};
+		B20000000000000000000032 /* Probe Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000001 /* NativeAudioProbeApp.swift */,
+				B20000000000000000000002 /* AudioTestView.swift */,
+				B20000000000000000000003 /* AudioTestService.swift */,
+				B20000000000000000000004 /* AudioFileWriter.swift */,
+				B20000000000000000000005 /* AudioMeter.swift */,
+				B20000000000000000000006 /* ProbeModels.swift */,
+			);
+			path = Sources/NativeAudioProbe;
+			sourceTree = SOURCE_ROOT;
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000041 /* Meeting Recorder */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000051 /* Build configuration list for PBXNativeTarget "Meeting Recorder" */;
+			buildPhases = (
+				A10000000000000000000020 /* Sources */,
+				A10000000000000000000021 /* Frameworks */,
+				A10000000000000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = "Meeting Recorder";
+			packageProductDependencies = (
+			);
+			productName = MeetingRecorder;
+			productReference = A1000000000000000000000D /* Meeting Recorder.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B20000000000000000000041 /* NativeAudioProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B20000000000000000000051 /* Build configuration list for PBXNativeTarget "NativeAudioProbe" */;
+			buildPhases = (
+				B20000000000000000000020 /* Sources */,
+				B20000000000000000000021 /* Frameworks */,
+				B20000000000000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+			);
+			name = NativeAudioProbe;
+			packageProductDependencies = (
+			);
+			productName = NativeAudioProbe;
+			productReference = B20000000000000000000008 /* Native Audio Probe.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000042 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					A10000000000000000000041 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					B20000000000000000000041 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+				};
+			};
+			buildConfigurationList = A10000000000000000000052 /* Build configuration list for PBXProject "MeetingRecorder" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000000000000000000031;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A10000000000000000000034 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000041 /* Meeting Recorder */,
+				B20000000000000000000041 /* NativeAudioProbe */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000001D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000020 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* MeetingRecorderApp.swift in Sources */,
+				A10000000000000000000012 /* AppModel.swift in Sources */,
+				A10000000000000000000013 /* Models.swift in Sources */,
+				A10000000000000000000014 /* AudioCaptureService.swift in Sources */,
+				A10000000000000000000015 /* MeetingDetector.swift in Sources */,
+				A10000000000000000000016 /* MeetingStore.swift in Sources */,
+				A10000000000000000000017 /* ProcessRunner.swift in Sources */,
+				A10000000000000000000018 /* ProcessingPipeline.swift in Sources */,
+				A10000000000000000000019 /* CaptureBackend.swift in Sources */,
+				A1000000000000000000001A /* Components.swift in Sources */,
+				A1000000000000000000001B /* MainWindowView.swift in Sources */,
+				A1000000000000000000001C /* ScreenCaptureKitAudioCaptureService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000020 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B20000000000000000000011 /* NativeAudioProbeApp.swift in Sources */,
+				B20000000000000000000012 /* AudioTestView.swift in Sources */,
+				B20000000000000000000013 /* AudioTestService.swift in Sources */,
+				B20000000000000000000014 /* AudioFileWriter.swift in Sources */,
+				B20000000000000000000015 /* AudioMeter.swift in Sources */,
+				B20000000000000000000016 /* ProbeModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MeetingRecorderApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.meetingrecorder;
+				PRODUCT_NAME = "Meeting Recorder";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MeetingRecorderApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.meetingrecorder;
+				PRODUCT_NAME = "Meeting Recorder";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B20000000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				COPY_PHASE_STRIP = NO;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NativeAudioProbe/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.NativeAudioProbe;
+				PRODUCT_NAME = "Native Audio Probe";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		B20000000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				COPY_PHASE_STRIP = NO;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NativeAudioProbe/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.NativeAudioProbe;
+				PRODUCT_NAME = "Native Audio Probe";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A10000000000000000000063 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000064 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000051 /* Build configuration list for PBXNativeTarget "Meeting Recorder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000061 /* Debug */,
+				A10000000000000000000062 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B20000000000000000000051 /* Build configuration list for PBXNativeTarget "NativeAudioProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B20000000000000000000061 /* Debug */,
+				B20000000000000000000062 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000052 /* Build configuration list for PBXProject "MeetingRecorder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000063 /* Debug */,
+				A10000000000000000000064 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000042 /* Project object */;
+}

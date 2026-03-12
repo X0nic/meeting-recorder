@@ -1,84 +1,92 @@
-# meeting
+# Meeting Recorder
 
-A macOS CLI for recording meetings (screen + system audio + mic), then transcribing with Whisper and generating structured notes with Claude.
+A native macOS SwiftUI app for recording meetings, transcribing them with `whisper-cli`, and generating meeting notes with Claude.
+
+![Meeting Recorder app screenshot](docs/app-screenshot.png)
+
+## Features
+
+- Record meeting audio with native ScreenCaptureKit system audio capture plus microphone input
+- Show live audio meters for both meeting audio and microphone input
+- Detect common meeting apps like Teams, Zoom, Meet, Slack, Webex, and FaceTime
+- Transcribe recordings with local Whisper models through `whisper-cli`
+- Generate structured meeting notes with the Claude CLI
+- Recover transcript-only meetings and re-generate notes from the UI
+- Process existing recordings by importing or dragging in audio/video files
 
 ## Requirements
-- macOS
-- Homebrew
-- ffmpeg (AVFoundation capture)
-- whisper (whisper.cpp or OpenAI whisper CLI)
-- Claude CLI
+
+- macOS 15 or later
+- `whisper-cli` installed and available in one of:
+  - `~/.local/bin`
+  - `~/bin`
+  - `/opt/homebrew/bin`
+  - `/usr/local/bin`
+- `claude` CLI installed and authenticated
+
+## Build
+
+Debug build:
+
+```bash
+swift build
+```
+
+Universal release app:
+
+```bash
+xcodebuild \
+  -project MeetingRecorder.xcodeproj \
+  -scheme "Meeting Recorder" \
+  -configuration Release \
+  -destination 'platform=macOS' \
+  -derivedDataPath .derived-data-release-universal \
+  ARCHS='arm64 x86_64' \
+  ONLY_ACTIVE_ARCH=NO \
+  build
+```
+
+Release app bundle:
+
+```bash
+.derived-data-release-universal/Build/Products/Release/Meeting\ Recorder.app
+```
+
+Zip for transfer:
+
+```bash
+ditto -c -k --sequesterRsrc --keepParent \
+  ".derived-data-release-universal/Build/Products/Release/Meeting Recorder.app" \
+  "MeetingRecorder-universal.zip"
+```
 
 ## Setup
-```bash
-./setup.sh
-```
 
-## Usage
-```bash
-meeting start          # record all screens (default)
-meeting start 1        # record a specific screen by index
-meeting test           # one-time setup: pick devices + verify audio signal
-meeting stop           # stop recording, transcribe, and create notes
-meeting list           # show past meetings with duration + summary
-meeting notes 1        # view notes by index or folder name
-meeting search roadmap # search transcripts and notes
-```
+1. Install `whisper-cli`.
+2. Install and log into the Claude CLI.
+3. Make sure a Whisper model exists, for example:
+   `~/.local/share/whisper-models/ggml-small.bin`
+4. Launch the app and grant:
+   - Microphone access
+   - Screen Recording access
 
 ## Storage
-Meetings are saved under:
+
+Meetings are stored under:
+
+```text
+~/Documents/meetings/YYYY-MM-DD_HH-MM-SS/
 ```
-~/Documents/meetings/YYYY-MM-DD_HH-MM/
-```
-Each folder includes:
+
+Typical files:
+
 - `recording.mov`
-- `audio.wav`
+- `audio.wav` or imported audio
 - `transcript.txt`
 - `notes.md`
+- `meeting.meta`
 
-## Config
-`meeting test` writes `~/.meeting-recorder/config` using device names:
-```
-screen=Capture screen 0
-system_audio=Microsoft Teams Audio
-mic=MacBook Air Microphone
-```
+## Notes
 
-## Notes format
-```
-# Meeting Notes — YYYY-MM-DD HH:MM
-
-## Summary
-Brief 2-3 sentence overview
-
-## Key Discussion Points
-- Point 1
-- Point 2
-
-## Decisions Made
-- Decision 1
-- Decision 2
-
-## Action Items
-- [ ] Action item (@person if mentioned)
-
-## Follow-ups
-- Follow-up item
-
-## Raw Transcript
-[link to transcript.txt]
-```
-
-## Tips
-- On first run, macOS will prompt for Screen Recording permission. Approve it for your terminal.
-- Run `meeting test` once to save your preferred screen(s), system audio, and mic by device name.
-- Use these env vars to override device selection:
-  - `MEETING_SYS_AUDIO` / `MEETING_MIC_AUDIO` (device name or index)
-  - `MEETINGS_DIR`
-
-## Troubleshooting
-- List devices:
-  ```bash
-  ffmpeg -f avfoundation -list_devices true -i ""
-  ```
-- If audio isn’t captured, confirm the correct device names and retry `meeting test`.
+- Finder-launched builds do not inherit your shell `PATH`, so the app searches common user, Homebrew, and system bin directories itself.
+- If macOS says the copied app is "damaged", it is usually a quarantine/signing warning. Zip the app before transfer, or remove quarantine on the destination Mac.
