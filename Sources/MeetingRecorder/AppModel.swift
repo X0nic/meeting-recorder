@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var history: [MeetingRecord] = []
     @Published var historySearchText = ""
     @Published var isFileImporterPresented = false
+    @Published var isMeetingFolderImporterPresented = false
     @Published var lastCompletedSummary: RecordingSessionSummary?
     @Published var isMonitoringAudio = false
     @Published var isGeneratingNotes = false
@@ -278,6 +279,55 @@ final class AppModel: ObservableObject {
         switch result {
         case .success(let url):
             processImportedFile(url: url)
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func reprocessMeetingFolder(url: URL) {
+        Task {
+            do {
+                errorMessage = nil
+                phase = .processing
+                processingSteps = ["Loading meeting folder...", "Mixing audio..."]
+
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    throw NSError(domain: "AppModel", code: 70, userInfo: [NSLocalizedDescriptionKey: "Select a meeting folder, not a file."])
+                }
+
+                sessionDirectoryURL = url
+                let existingMetadata = try? await store.loadMetadata(in: url)
+                let artifacts = try resolveExistingArtifacts(in: url, metadata: existingMetadata)
+                let mixedAudioURL = try mixRecordedAudio(artifacts: artifacts)
+                let measuredDuration = try duration(of: mixedAudioURL)
+                let summary = try await runProcessingForReprocessedAudio(
+                    directory: url,
+                    artifacts: artifacts,
+                    audioURL: mixedAudioURL,
+                    existingMetadata: existingMetadata,
+                    measuredDuration: measuredDuration
+                )
+
+                lastCompletedSummary = summary
+                phase = .complete
+                processingSteps = completedSteps(for: summary)
+                if let notesErrorDescription = summary.notesErrorDescription {
+                    errorMessage = "Note generation failed: \(notesErrorDescription)"
+                }
+                refreshAudioMonitoring()
+                refreshHistory()
+            } catch {
+                phase = .failed
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func handleMeetingFolderImport(result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            reprocessMeetingFolder(url: url)
         case .failure(let error):
             errorMessage = error.localizedDescription
         }
@@ -588,6 +638,55 @@ private extension AppModel {
         )
     }
 
+    func runProcessingForReprocessedAudio(
+        directory: URL,
+        artifacts: CaptureSessionArtifacts,
+        audioURL: URL,
+        existingMetadata: MeetingMetadata?,
+        measuredDuration: TimeInterval
+    ) async throws -> RecordingSessionSummary {
+        let result = try await processAudio(audioURL: audioURL, initialSteps: ["Loading meeting folder...", "Mixing audio..."])
+        let createdAt = existingMetadata?.createdAt ?? inferredCreatedAt(for: directory)
+        let metadata = MeetingMetadata(
+            createdAt: createdAt,
+            duration: measuredDuration,
+            wordCount: result.wordCount,
+            targetAppName: existingMetadata?.targetAppName,
+            audioCaptureMode: existingMetadata?.audioCaptureMode ?? .screenCaptureKit,
+            micDevice: existingMetadata?.micDevice,
+            displayName: existingMetadata?.displayName,
+            whisperModel: selectedWhisperModel?.id ?? existingMetadata?.whisperModel,
+            summaryPreview: result.summaryPreview,
+            recordingFileName: existingMetadata?.recordingFileName,
+            audioFileName: audioURL.lastPathComponent,
+            systemAudioFileName: artifacts.systemAudioURL?.lastPathComponent,
+            microphoneAudioFileName: artifacts.microphoneAudioURL?.lastPathComponent,
+            transcriptFileName: result.transcriptURL?.lastPathComponent,
+            notesFileName: result.notesURL?.lastPathComponent
+        )
+        try await store.saveMetadata(metadata, in: directory)
+
+        return RecordingSessionSummary(
+            directoryURL: directory,
+            recordingURL: existingMetadata?.recordingFileName.map { directory.appendingPathComponent($0) },
+            audioURL: audioURL,
+            systemAudioURL: artifacts.systemAudioURL,
+            microphoneAudioURL: artifacts.microphoneAudioURL,
+            transcriptURL: result.transcriptURL,
+            notesURL: result.notesURL,
+            startedAt: createdAt,
+            endedAt: result.endedAt,
+            duration: measuredDuration,
+            wordCount: result.wordCount,
+            targetAppName: metadata.targetAppName ?? metadata.displayName,
+            audioCaptureMode: metadata.audioCaptureMode?.rawValue,
+            micDevice: metadata.micDevice,
+            whisperModel: metadata.whisperModel,
+            summaryPreview: result.summaryPreview,
+            notesErrorDescription: result.notesErrorDescription
+        )
+    }
+
     func completedSteps(for summary: RecordingSessionSummary) -> [String] {
         var steps = [
             "Stopping capture...",
@@ -778,6 +877,45 @@ private extension AppModel {
         }
         let resourceValues = try? directoryURL.resourceValues(forKeys: [.creationDateKey])
         return resourceValues?.creationDate ?? .now
+    }
+
+    func resolveExistingArtifacts(in directory: URL, metadata: MeetingMetadata?) throws -> CaptureSessionArtifacts {
+        let fileManager = FileManager.default
+        let systemCandidates = [
+            metadata?.systemAudioFileName.map { directory.appendingPathComponent($0) },
+            directory.appendingPathComponent("system-audio.caf"),
+            directory.appendingPathComponent("system_audio.caf")
+        ].compactMap { $0 }
+        let micCandidates = [
+            metadata?.microphoneAudioFileName.map { directory.appendingPathComponent($0) },
+            directory.appendingPathComponent("mic-audio.caf"),
+            directory.appendingPathComponent("mic_audio.caf"),
+            directory.appendingPathComponent("microphone-audio.caf")
+        ].compactMap { $0 }
+
+        let systemAudioURL = systemCandidates.first(where: { fileManager.fileExists(atPath: $0.path) })
+        let microphoneAudioURL = micCandidates.first(where: { fileManager.fileExists(atPath: $0.path) })
+
+        guard systemAudioURL != nil || microphoneAudioURL != nil else {
+            throw NSError(
+                domain: "AppModel",
+                code: 71,
+                userInfo: [NSLocalizedDescriptionKey: "No raw system or microphone CAF files were found in that meeting folder."]
+            )
+        }
+
+        return CaptureSessionArtifacts(
+            mixedAudioURL: nil,
+            systemAudioURL: systemAudioURL,
+            microphoneAudioURL: microphoneAudioURL
+        )
+    }
+
+    func duration(of audioURL: URL) throws -> TimeInterval {
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        let sampleRate = audioFile.processingFormat.sampleRate
+        guard sampleRate > 0 else { return 0 }
+        return Double(audioFile.length) / sampleRate
     }
 }
 

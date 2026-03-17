@@ -16,6 +16,11 @@ struct MeetingRecorderApp: App {
                     model.isFileImporterPresented = true
                 }
                 .keyboardShortcut("o")
+
+                Button("Reprocess Meeting Folder…") {
+                    model.isMeetingFolderImporterPresented = true
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
     }

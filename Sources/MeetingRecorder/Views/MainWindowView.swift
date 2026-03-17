@@ -24,6 +24,9 @@ struct MainWindowView: View {
         .fileImporter(isPresented: $model.isFileImporterPresented, allowedContentTypes: [.movie, .mpeg4Movie, .audio, .wav, .mp3]) { result in
             model.handleFileImport(result: result)
         }
+        .fileImporter(isPresented: $model.isMeetingFolderImporterPresented, allowedContentTypes: [.folder]) { result in
+            model.handleMeetingFolderImport(result: result)
+        }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted, perform: handleDrop(providers:))
         .overlay(alignment: .bottomTrailing) {
             if isDropTargeted {
