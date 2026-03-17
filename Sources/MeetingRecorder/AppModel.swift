@@ -71,6 +71,9 @@ final class AppModel: ObservableObject {
     }
 
     var recordingStatusLine: String {
+        if phase == .failed, let captureFailureBannerMessage {
+            return captureFailureBannerMessage
+        }
         if let selectedMeeting {
             let title = selectedMeeting.windowTitle.map { " - \($0)" } ?? ""
             return phase == .recording ? "Recording \(selectedMeeting.appName)\(title)" : "Target app: \(selectedMeeting.appName)\(title)"
@@ -102,6 +105,22 @@ final class AppModel: ObservableObject {
             return "Writing separate raw files for system audio and microphone."
         }
         return "Raw CAF files stay available for debugging alongside the mixed audio, transcript, and notes."
+    }
+
+    var captureFailureBannerMessage: String? {
+        guard let failurePoint = captureBackendState.failurePoint else {
+            return nil
+        }
+        let status = captureBackendState.statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = status.isEmpty ? "ScreenCaptureKit capture stopped unexpectedly." : status
+
+        if failurePoint.hasPrefix("waiting-for-") {
+            return "Recording is not active. \(detail)"
+        }
+        if failurePoint.hasPrefix("processing-") || failurePoint == "stream-did-stop" {
+            return "Recording failed and has stopped. \(detail)"
+        }
+        return "Recording could not continue. \(detail)"
     }
 
     var processingProgress: Double {
@@ -385,6 +404,13 @@ extension AppModel: AudioCaptureBackendDelegate {
             self.captureBackendState = state
             if self.phase != .recording {
                 self.isMonitoringAudio = state.streamStarted
+            }
+            if self.phase == .recording, let activeFailureMessage = self.captureFailureBannerMessage {
+                self.phase = .failed
+                self.isMonitoringAudio = false
+                self.errorMessage = activeFailureMessage
+                self.setupMessage = "The capture backend stopped. Fix the issue below before starting a new recording."
+                self.audioLevels = AudioLevels()
             }
             self.updatePermissionDiagnostics()
         }

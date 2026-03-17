@@ -195,6 +195,13 @@ struct MainWindowView: View {
                     .buttonStyle(.bordered)
                 }
 
+                if let activeFailureMessage = model.captureFailureBannerMessage {
+                    AlertBanner(
+                        title: "Recording Failed",
+                        message: activeFailureMessage
+                    )
+                }
+
                 if let setupMessage = model.setupMessage {
                     Text(setupMessage)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -203,7 +210,7 @@ struct MainWindowView: View {
 
                 backendDiagnosticsCard
 
-                if let errorMessage = model.errorMessage {
+                if let errorMessage = model.errorMessage, errorMessage != model.captureFailureBannerMessage {
                     Text(errorMessage)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.red)
