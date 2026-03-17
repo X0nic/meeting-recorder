@@ -24,6 +24,9 @@ struct MainWindowView: View {
         .fileImporter(isPresented: $model.isFileImporterPresented, allowedContentTypes: [.movie, .mpeg4Movie, .audio, .wav, .mp3]) { result in
             model.handleFileImport(result: result)
         }
+        .fileImporter(isPresented: $model.isMeetingFolderImporterPresented, allowedContentTypes: [.folder]) { result in
+            model.handleMeetingFolderImport(result: result)
+        }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted, perform: handleDrop(providers:))
         .overlay(alignment: .bottomTrailing) {
             if isDropTargeted {
@@ -195,6 +198,13 @@ struct MainWindowView: View {
                     .buttonStyle(.bordered)
                 }
 
+                if let activeFailureMessage = model.captureFailureBannerMessage {
+                    AlertBanner(
+                        title: "Recording Failed",
+                        message: activeFailureMessage
+                    )
+                }
+
                 if let setupMessage = model.setupMessage {
                     Text(setupMessage)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -203,7 +213,7 @@ struct MainWindowView: View {
 
                 backendDiagnosticsCard
 
-                if let errorMessage = model.errorMessage {
+                if let errorMessage = model.errorMessage, errorMessage != model.captureFailureBannerMessage {
                     Text(errorMessage)
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.red)

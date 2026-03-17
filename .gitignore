@@ -1,11 +1,10 @@
-.DS_Store
+MeetingRecorder-universal.zip
 .build/
 .build-scratch/
+.swiftpm/
 .clang-module-cache/
 .derived-data/
 .derived-data-release/
 .derived-data-release-universal/
-.swift-module-cache/
-.swiftpm/
-*.xcuserstate
-xcuserdata/
+MeetingRecorder.xcodeproj/project.xcworkspace/
+MeetingRecorder.xcodeproj/xcuserdata/
